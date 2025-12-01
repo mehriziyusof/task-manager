@@ -65,14 +65,13 @@ export default function Dashboard() {
   };
 
   const startNewProject = async (processId: number, processTitle: string) => {
-    // فقط مدیر اجازه داره
     if (role !== 'manager') return alert("فقط مدیر می‌تواند پروژه جدید تعریف کند.");
 
     const projectName = prompt(`نام پروژه جدید برای "${processTitle}" را وارد کنید:`);
     if (!projectName) return;
 
     try {
-      // 1. ساخت پروژه در دیتابیس
+      // 1. ساخت پروژه
       const { data: projectData, error: projectError } = await supabase
         .from('projects')
         .insert([{ title: projectName, process_id: processId }])
@@ -83,27 +82,49 @@ export default function Dashboard() {
       
       const newProjectId = projectData.id;
 
-      // 2. دریافت مراحل الگو (شامل توضیحات و...)
-      const { data: stagesData } = await supabase
-        .from('stages')
-        .select('*')
-        .eq('process_id', processId);
+      // 2. دریافت مراحل الگو
+      const { data: stagesData } = await supabase.from('stages').select('*').eq('process_id', processId);
 
-      // 3. کپی کردن مراحل به تسک‌های پروژه
       if (stagesData && stagesData.length > 0) {
-        const tasksToCreate = stagesData.map(stage => ({
-          project_id: newProjectId,
-          stage_id: stage.id,
-          title: stage.title,
-          status: 'not_started', // وضعیت اولیه
-          // انتقال توضیحات الگو به تسک جدید
-          description: stage.description ? `(توضیحات فرآیند: ${stage.description})` : '',
-        }));
+        
+        // 3. دریافت تمام آیتم‌های چک‌لیست مربوط به این مراحل
+        // ما همه چک‌لیست‌های این مراحل رو یکجا میگیریم
+        const stageIds = stagesData.map(s => s.id);
+        const { data: checklistData } = await supabase
+            .from('stage_checklists')
+            .select('*')
+            .in('stage_id', stageIds);
 
-        await supabase.from('project_tasks').insert(tasksToCreate);
+        // 4. ساخت تسک‌ها
+        for (const stage of stagesData) {
+            // الف) اول تسک رو می‌سازیم
+            const { data: taskData, error: taskError } = await supabase
+                .from('project_tasks')
+                .insert([{
+                    project_id: newProjectId,
+                    stage_id: stage.id,
+                    title: stage.title,
+                    status: 'not_started',
+                    description: stage.description ? `(توضیحات فرآیند: ${stage.description})` : '',
+                }])
+                .select()
+                .single();
+            
+            if (taskError) throw taskError;
+
+            // ب) حالا چک‌لیست‌های مربوط به این مرحله رو پیدا می‌کنیم و برای تسک جدید کپی می‌کنیم
+            const relatedChecklists = checklistData?.filter(c => c.stage_id === stage.id) || [];
+            
+            if (relatedChecklists.length > 0) {
+                const checklistsToCreate = relatedChecklists.map(c => ({
+                    task_id: taskData.id,
+                    title: c.title
+                }));
+                await supabase.from('task_checklists').insert(checklistsToCreate);
+            }
+        }
       }
 
-      // هدایت به صفحه پروژه جدید
       router.push(`/project/${newProjectId}`);
 
     } catch (error) {
