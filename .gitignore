@@ -1,0 +1,5 @@
+# فایل‌هایی که نباید آپلود شوند
+node_modules
+.next
+.env.local
+.DS_Store
