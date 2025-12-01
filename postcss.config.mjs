@@ -1,11 +1,11 @@
 // postcss.config.mjs
+// این کد باید مشکل PostCSS/Turbopack را حل کند.
 
 const config = {
   plugins: {
-    // ✅ استفاده از نام کامل پکیج نصب‌شده
-    "@tailwindcss/postcss": {}, 
-    // استفاده از Autoprefixer برای سازگاری مرورگرها
-    "autoprefixer": {}, 
+    // ✅ نام استاندارد پلاگین Tailwind CSS (نه نام کامل پکیج)
+    tailwindcss: {}, 
+    autoprefixer: {},
   },
 };
 

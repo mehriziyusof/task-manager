@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import Link from "next/link";
-// اگر از next/router در page.tsx استفاده می‌کنید، نیازی به این import نیست، ولی اگر ارور داد، پاکش کنید.
-// import { useRouter } from 'next/navigation'; 
+// router در page.tsx شما استفاده شده بود، نیازی به import در layout نیست
 
 export const metadata: Metadata = {
   title: "دیجی‌تسک | مدیریت پروژه",
@@ -17,7 +16,7 @@ export default function RootLayout({
   return (
     <html lang="fa" dir="rtl">
       <head>
-        {/* لود فونت Vazirmatn از CDN برای جلوگیری از خطای بیلد */}
+        {/* ✅ بارگذاری فونت Vazirmatn در head برای جلوگیری از خطای بیلد */}
         <link 
           href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css" 
           rel="stylesheet" 
@@ -30,13 +29,12 @@ export default function RootLayout({
         {/* کانتینر اصلی که فاصله‌ها و لایه‌بندی فلکس را تنظیم می‌کند */}
         <div className="relative z-10 flex w-full h-full p-4 gap-4 md:gap-6 md:p-6">
           
-          {/* --- سایدبار (منوی سمت راست) --- */}
+          {/* --- سایدبار (پنل شناور سمت راست) --- */}
           <aside className="hidden md:flex flex-col w-72 h-full flex-shrink-0">
             <div className="glass w-full h-full rounded-3xl p-6 flex flex-col justify-between">
               
               {/* بخش بالا: لوگو و منو */}
               <div>
-                {/* لوگو */}
                 <div className="flex items-center gap-4 mb-10 px-2">
                   <div className="w-12 h-12 flex items-center justify-center rounded-2xl bg-gradient-to-tr from-blue-600 to-purple-600 shadow-lg shadow-blue-500/30 text-white font-bold text-xl">
                     DT

@@ -16,11 +16,11 @@
 
 body {
   font-family: 'Vazirmatn', sans-serif;
-  /* پس‌زمینه جامد برای جلوگیری از خطای بیلد */
+  /* پس‌زمینه Solid برای جلوگیری از خطای بیلد */
   @apply bg-[#0D0D15] text-white antialiased overflow-hidden;
 }
 
-/* لایه تاریک برای ایجاد کنتراست */
+/* لایه تاریک و مات برای ایجاد کنتراست (Body Overlay) */
 body::before {
   content: '';
   position: fixed;
