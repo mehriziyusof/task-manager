@@ -5,8 +5,11 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
+// اضافه کردن تقویم فارسی
+import DatePicker from "react-multi-date-picker";
+import persian from "react-date-object/calendars/persian";
+import persian_fa from "react-date-object/locales/persian_fa";
 
-// نوع داده تسک آپدیت شد
 type Task = { 
   id: number; 
   title: string; 
@@ -27,8 +30,6 @@ export default function ProjectDetail() {
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [role, setRole] = useState<string>('staff');
-  
-  // استیت برای تسک انتخاب شده جهت ویرایش
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
 
   const completedCount = tasks.filter(t => t.status === 'done').length;
@@ -54,12 +55,9 @@ export default function ProjectDetail() {
   const toggleTask = async (taskId: number, currentStatus: string) => {
     const newStatus = currentStatus === 'pending' ? 'done' : 'pending';
     const { error } = await supabase.from('project_tasks').update({ status: newStatus }).eq('id', taskId);
-    if (!error) {
-      setTasks(prev => prev.map(t => Number(t.id) === Number(taskId) ? { ...t, status: newStatus } : t));
-    }
+    if (!error) setTasks(tasks.map(t => t.id === taskId ? { ...t, status: newStatus } : t));
   };
 
-  // تابع ذخیره جزئیات (توضیحات و تاریخ)
   const saveTaskDetails = async () => {
     if (!selectedTask) return;
     
@@ -75,9 +73,8 @@ export default function ProjectDetail() {
     if (error) {
       alert("خطا در ذخیره جزئیات!");
     } else {
-      // آپدیت لیست اصلی
       setTasks(prev => prev.map(t => t.id === selectedTask.id ? selectedTask : t));
-      setSelectedTask(null); // بستن پنجره
+      setSelectedTask(null);
     }
   };
 
@@ -101,55 +98,59 @@ export default function ProjectDetail() {
 
   return (
     <div className="min-h-screen bg-gray-50 p-6 md:p-12" dir="rtl">
-      {/* --- پنجره ویرایش (Modal) --- */}
+      {/* --- پنجره ویرایش با تقویم شمسی --- */}
       {selectedTask && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md">
-            <h3 className="text-xl font-bold mb-4 border-b pb-2">📝 جزئیات: {selectedTask.title}</h3>
+            <h3 className="text-xl font-bold mb-4 border-b pb-2">📅 زمان‌بندی: {selectedTask.title}</h3>
             
             <div className="space-y-4">
               <div>
-                <label className="block text-sm text-gray-500 mb-1">توضیحات انجام کار</label>
+                <label className="block text-sm text-gray-500 mb-1">توضیحات</label>
                 <textarea 
                   className="w-full border p-2 rounded-lg" 
                   rows={3}
                   value={selectedTask.description || ''}
                   onChange={e => setSelectedTask({...selectedTask, description: e.target.value})}
-                  placeholder="مشکلات، نکات یا توضیحات تکمیلی..."
+                  placeholder="توضیحات تکمیلی..."
                 ></textarea>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm text-gray-500 mb-1">تاریخ شروع</label>
-                  <input 
-                    type="date" 
-                    className="w-full border p-2 rounded-lg"
-                    value={selectedTask.start_date || ''}
-                    onChange={e => setSelectedTask({...selectedTask, start_date: e.target.value})}
+                  <DatePicker 
+                    calendar={persian}
+                    locale={persian_fa}
+                    value={selectedTask.start_date}
+                    onChange={(date) => setSelectedTask({...selectedTask, start_date: date?.toString() || ''})}
+                    inputClass="w-full border p-2 rounded-lg text-center font-bold text-gray-700"
+                    placeholder="انتخاب کن"
                   />
                 </div>
                 <div>
                   <label className="block text-sm text-gray-500 mb-1">تاریخ پایان</label>
-                  <input 
-                    type="date" 
-                    className="w-full border p-2 rounded-lg"
-                    value={selectedTask.end_date || ''}
-                    onChange={e => setSelectedTask({...selectedTask, end_date: e.target.value})}
+                  <DatePicker 
+                    calendar={persian}
+                    locale={persian_fa}
+                    value={selectedTask.end_date}
+                    onChange={(date) => setSelectedTask({...selectedTask, end_date: date?.toString() || ''})}
+                    inputClass="w-full border p-2 rounded-lg text-center font-bold text-gray-700"
+                    placeholder="انتخاب کن"
                   />
                 </div>
               </div>
             </div>
 
             <div className="flex gap-2 mt-6">
-              <button onClick={saveTaskDetails} className="flex-1 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700">ذخیره تغییرات</button>
+              <button onClick={saveTaskDetails} className="flex-1 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700">ثبت اطلاعات</button>
               <button onClick={() => setSelectedTask(null)} className="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300">لغو</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* --- صفحه اصلی --- */}
+      {/* --- بقیه صفحه (بدون تغییر زیاد) --- */}
       <div className="max-w-4xl mx-auto mb-8 flex justify-between items-center">
         <div>
            <Link href="/" className="text-gray-500 text-sm hover:text-blue-600 mb-2 block">← بازگشت</Link>
@@ -170,7 +171,6 @@ export default function ProjectDetail() {
         <div>
           {tasks.map((task) => (
             <div key={task.id} className="p-5 flex flex-col gap-2 border-b last:border-0" style={{ backgroundColor: task.status === 'done' ? '#eff6ff' : '#ffffff' }}>
-              
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
                   <button
@@ -184,24 +184,26 @@ export default function ProjectDetail() {
                     {task.title}
                   </p>
                 </div>
-                
-                {/* دکمه ویرایش جزئیات */}
                 <button 
                   onClick={() => setSelectedTask(task)}
                   className="text-xs text-blue-500 bg-blue-50 px-2 py-1 rounded hover:bg-blue-100"
                 >
-                  {task.description ? '📝 ویرایش جزئیات' : '➕ افزودن جزئیات'}
+                  {task.start_date ? '📅 ویرایش' : '➕ زمان‌بندی'}
                 </button>
               </div>
 
-              {/* نمایش جزئیات زیر تسک (فقط اگر پر شده باشد) */}
               {(task.description || task.start_date) && (
-                <div className="mr-12 text-sm text-gray-500 bg-gray-50 p-2 rounded border border-gray-100 mt-1">
-                   {task.start_date && <span className="ml-4">📅 {task.start_date} تا {task.end_date}</span>}
-                   {task.description && <p className="mt-1">{task.description}</p>}
+                <div className="mr-12 text-sm text-gray-600 bg-gray-50 p-3 rounded border border-gray-100 mt-1 flex flex-col gap-1">
+                   {task.start_date && (
+                     <div className="flex items-center gap-2 text-blue-600 font-bold">
+                       <span>📅 {task.start_date}</span>
+                       <span>تا</span>
+                       <span>{task.end_date}</span>
+                     </div>
+                   )}
+                   {task.description && <p className="text-gray-700">{task.description}</p>}
                 </div>
               )}
-
             </div>
           ))}
         </div>
