@@ -2,34 +2,24 @@
 @tailwind components;
 @tailwind utilities;
 
-/* نکته مهم: در اینجا هیچ دستور @import وجود ندارد تا بیلد سرور سریع انجام شود */
-
 :root {
-  /* پالت رنگی شیشه‌ای (Liquid Glass Palette) */
-  --glass-border-light: rgba(255, 255, 255, 0.15); /* لبه براق بالا */
-  --glass-border-dark: rgba(255, 255, 255, 0.05);  /* لبه تیره پایین */
-  
-  /* گرادینت سطح شیشه: این باعث می‌شود پنل‌ها تخت نباشند و حس نور داشته باشند */
-  --glass-surface: linear-gradient(
-    145deg, 
-    rgba(255, 255, 255, 0.12) 0%, 
-    rgba(255, 255, 255, 0.02) 100%
-  );
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-bg: rgba(255, 255, 255, 0.03);
 }
 
 body {
-  /* فونت وزیر که در layout لود می‌شود اینجا استفاده می‌شود */
-  font-family: 'Vazirmatn', sans-serif;
-  @apply bg-gray-900 text-white antialiased overflow-hidden;
-  
-  /* تصویر پس‌زمینه با کیفیت و دارک */
-  background-image: url('https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=2564&auto=format&fit=crop');
+  /* فونت وزیر (بدون import در اینجا) */
+  font-family: 'Vazirmatn', sans-serif; 
+  background: url('https://images.unsplash.com/photo-1614850523060-8da1d56ae167?q=80&w=2670&auto=format&fit=crop') no-repeat center center fixed;
   background-size: cover;
   background-position: center;
   background-attachment: fixed;
+  color: white;
+  min-height: 100vh;
+  overflow-x: hidden;
+  /* لایه تاریک */
+  position: relative; 
 }
-
-/* لایه تاریک روی عکس برای اینکه نوشته‌ها راحت خوانده شوند */
 body::before {
   content: '';
   position: fixed;
@@ -37,70 +27,33 @@ body::before {
   left: 0;
   width: 100%;
   height: 100%;
-  background: rgba(0, 0, 0, 0.65); /* 65% تیرگی */
-  backdrop-filter: blur(8px);      /* پس‌زمینه اصلی کمی تار می‌شود */
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
   z-index: -1;
 }
 
-@layer components {
-  
-  /* --- کلاس اصلی گلس (جادوی طراحی) --- */
-  .glass {
-    background: var(--glass-surface);
-    
-    /* تاری شدید برای مات کردن محتوای زیر پنل */
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    
-    /* حاشیه‌های سه‌بعدی */
-    border-top: 1px solid var(--glass-border-light);
-    border-left: 1px solid var(--glass-border-light);
-    border-right: 1px solid var(--glass-border-dark);
-    border-bottom: 1px solid var(--glass-border-dark);
-    
-    /* سایه نرم و درخشش داخلی */
-    box-shadow: 
-      0 8px 32px 0 rgba(0, 0, 0, 0.3),
-      inset 0 0 0 1px rgba(255, 255, 255, 0.05);
-  }
-
-  /* انیمیشن برای هاور کردن آیتم‌ها */
-  .glass-hover {
-    @apply transition-all duration-300 ease-out;
-  }
-  
-  .glass-hover:hover {
-    background: linear-gradient(
-      145deg, 
-      rgba(255, 255, 255, 0.18) 0%, 
-      rgba(255, 255, 255, 0.05) 100%
-    );
-    transform: translateY(-2px);
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
-    border-color: rgba(255, 255, 255, 0.25);
-  }
+/* کلاس اصلی گلس */
+.glass {
+  background: var(--glass-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
 }
 
-/* --- شخصی‌سازی اسکرول‌بار --- */
+/* افکت هاور */
+.glass-hover:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: translateY(-2px);
+  transition: all 0.3s ease;
+}
+
+/* اسکرول بار ساده */
 ::-webkit-scrollbar {
   width: 6px;
-  height: 6px;
 }
-
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
 ::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.15);
-  border-radius: 50px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.3);
-}
-
-/* حذف هایلایت آبی در موبایل */
-* {
-  -webkit-tap-highlight-color: transparent;
+  border-radius: 10px;
 }
