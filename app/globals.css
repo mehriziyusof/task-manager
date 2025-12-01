@@ -3,23 +3,28 @@
 @tailwind utilities;
 
 :root {
-  --glass-border: rgba(255, 255, 255, 0.08);
-  --glass-bg: rgba(255, 255, 255, 0.03);
+  /* پالت رنگی شیشه‌ای (Liquid Glass Palette) */
+  --glass-border-light: rgba(255, 255, 255, 0.15);
+  --glass-border-dark: rgba(255, 255, 255, 0.05);
+  
+  --glass-surface: linear-gradient(
+    145deg, 
+    rgba(255, 255, 255, 0.12) 0%, 
+    rgba(255, 255, 255, 0.02) 100%
+  );
 }
 
 body {
-  /* فونت وزیر (بدون import در اینجا) */
-  font-family: 'Vazirmatn', sans-serif; 
-  background: url('https://images.unsplash.com/photo-1614850523060-8da1d56ae167?q=80&w=2670&auto=format&fit=crop') no-repeat center center fixed;
+  font-family: 'Vazirmatn', sans-serif;
+  /* 🛑 تغییر مهم: حذف لینک خارجی و استفاده از رنگ solid */
+  @apply bg-[#111] text-white antialiased overflow-hidden;
+  
   background-size: cover;
   background-position: center;
   background-attachment: fixed;
-  color: white;
-  min-height: 100vh;
-  overflow-x: hidden;
-  /* لایه تاریک */
-  position: relative; 
 }
+
+/* لایه تاریک روی پس‌زمینه (حالا روی رنگ solid اعمال می‌شود) */
 body::before {
   content: '';
   position: fixed;
@@ -27,33 +32,64 @@ body::before {
   left: 0;
   width: 100%;
   height: 100%;
-  background: rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(4px);
+  background: rgba(0, 0, 0, 0.5); /* کمی تیرگی بیشتر */
+  backdrop-filter: blur(8px);
   z-index: -1;
 }
 
-/* کلاس اصلی گلس */
-.glass {
-  background: var(--glass-bg);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid var(--glass-border);
-  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+@layer components {
+  
+  /* --- کلاس اصلی گلس --- */
+  .glass {
+    background: var(--glass-surface);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    
+    border-top: 1px solid var(--glass-border-light);
+    border-left: 1px solid var(--glass-border-light);
+    border-right: 1px solid var(--glass-border-dark);
+    border-bottom: 1px solid var(--glass-border-dark);
+    
+    box-shadow: 
+      0 8px 32px 0 rgba(0, 0, 0, 0.3),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+  }
+
+  .glass-hover {
+    @apply transition-all duration-300 ease-out;
+  }
+  
+  .glass-hover:hover {
+    background: linear-gradient(
+      145deg, 
+      rgba(255, 255, 255, 0.18) 0%, 
+      rgba(255, 255, 255, 0.05) 100%
+    );
+    transform: translateY(-2px);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+    border-color: rgba(255, 255, 255, 0.25);
+  }
 }
 
-/* افکت هاور */
-.glass-hover:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.2);
-  transform: translateY(-2px);
-  transition: all 0.3s ease;
-}
-
-/* اسکرول بار ساده */
+/* --- شخصی‌سازی اسکرول‌بار --- */
 ::-webkit-scrollbar {
   width: 6px;
+  height: 6px;
 }
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
 ::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.15);
-  border-radius: 10px;
+  border-radius: 50px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
 }
