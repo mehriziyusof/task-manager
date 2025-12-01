@@ -6,7 +6,15 @@ import Link from 'next/link';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 
-type Task = { id: number; title: string; status: 'pending' | 'done'; role_responsible: string; };
+// نوع داده تسک آپدیت شد
+type Task = { 
+  id: number; 
+  title: string; 
+  status: 'pending' | 'done'; 
+  description: string;
+  start_date: string;
+  end_date: string;
+};
 
 export default function ProjectDetail() {
   const params = useParams();
@@ -19,13 +27,14 @@ export default function ProjectDetail() {
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [role, setRole] = useState<string>('staff');
+  
+  // استیت برای تسک انتخاب شده جهت ویرایش
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
 
   const completedCount = tasks.filter(t => t.status === 'done').length;
   const progress = tasks.length > 0 ? Math.round((completedCount / tasks.length) * 100) : 0;
 
-  useEffect(() => { 
-    if (projectId) fetchData(); 
-  }, [projectId]);
+  useEffect(() => { if (projectId) fetchData(); }, [projectId]);
 
   const fetchData = async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -42,25 +51,33 @@ export default function ProjectDetail() {
     setLoading(false);
   };
 
-  // --- تابع تغییر وضعیت با لاگ و دیباگ ---
   const toggleTask = async (taskId: number, currentStatus: string) => {
-    console.log("دکمه کلیک شد! ID:", taskId); // برای دیباگ
-
     const newStatus = currentStatus === 'pending' ? 'done' : 'pending';
+    const { error } = await supabase.from('project_tasks').update({ status: newStatus }).eq('id', taskId);
+    if (!error) {
+      setTasks(prev => prev.map(t => Number(t.id) === Number(taskId) ? { ...t, status: newStatus } : t));
+    }
+  };
+
+  // تابع ذخیره جزئیات (توضیحات و تاریخ)
+  const saveTaskDetails = async () => {
+    if (!selectedTask) return;
     
-    // آپدیت در دیتابیس
     const { error } = await supabase
       .from('project_tasks')
-      .update({ status: newStatus })
-      .eq('id', taskId);
+      .update({
+        description: selectedTask.description,
+        start_date: selectedTask.start_date,
+        end_date: selectedTask.end_date
+      })
+      .eq('id', selectedTask.id);
 
     if (error) {
-      alert(`خطا: ${error.message}`);
+      alert("خطا در ذخیره جزئیات!");
     } else {
-      // آپدیت استیت (با مقایسه ایمن)
-      setTasks(prevTasks => prevTasks.map(t => 
-        Number(t.id) === Number(taskId) ? { ...t, status: newStatus } : t
-      ));
+      // آپدیت لیست اصلی
+      setTasks(prev => prev.map(t => t.id === selectedTask.id ? selectedTask : t));
+      setSelectedTask(null); // بستن پنجره
     }
   };
 
@@ -84,19 +101,64 @@ export default function ProjectDetail() {
 
   return (
     <div className="min-h-screen bg-gray-50 p-6 md:p-12" dir="rtl">
+      {/* --- پنجره ویرایش (Modal) --- */}
+      {selectedTask && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md">
+            <h3 className="text-xl font-bold mb-4 border-b pb-2">📝 جزئیات: {selectedTask.title}</h3>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm text-gray-500 mb-1">توضیحات انجام کار</label>
+                <textarea 
+                  className="w-full border p-2 rounded-lg" 
+                  rows={3}
+                  value={selectedTask.description || ''}
+                  onChange={e => setSelectedTask({...selectedTask, description: e.target.value})}
+                  placeholder="مشکلات، نکات یا توضیحات تکمیلی..."
+                ></textarea>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm text-gray-500 mb-1">تاریخ شروع</label>
+                  <input 
+                    type="date" 
+                    className="w-full border p-2 rounded-lg"
+                    value={selectedTask.start_date || ''}
+                    onChange={e => setSelectedTask({...selectedTask, start_date: e.target.value})}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-500 mb-1">تاریخ پایان</label>
+                  <input 
+                    type="date" 
+                    className="w-full border p-2 rounded-lg"
+                    value={selectedTask.end_date || ''}
+                    onChange={e => setSelectedTask({...selectedTask, end_date: e.target.value})}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-2 mt-6">
+              <button onClick={saveTaskDetails} className="flex-1 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700">ذخیره تغییرات</button>
+              <button onClick={() => setSelectedTask(null)} className="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300">لغو</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- صفحه اصلی --- */}
       <div className="max-w-4xl mx-auto mb-8 flex justify-between items-center">
         <div>
-           <Link href="/" className="text-gray-500 text-sm hover:text-blue-600 mb-2 block">← بازگشت به داشبورد</Link>
+           <Link href="/" className="text-gray-500 text-sm hover:text-blue-600 mb-2 block">← بازگشت</Link>
            <h1 className="text-3xl font-bold text-gray-900">🗂 {projectTitle}</h1>
+           <span className="text-xs text-gray-500 bg-gray-200 px-2 py-1 rounded mt-1 inline-block">نقش: {role === 'manager' ? 'مدیر' : 'پرسنل'}</span>
         </div>
-        <div className="flex gap-4 items-center">
-            <button onClick={downloadPDF} disabled={exporting} className="bg-gray-800 text-white px-4 py-2 rounded-lg hover:bg-gray-900 transition flex items-center gap-2 text-sm shadow-lg">
-                {exporting ? 'درحال ساخت...' : '📥 دانلود گزارش PDF'}
-            </button>
-            <div className="bg-white px-4 py-2 rounded-xl shadow-sm border border-gray-100 text-center">
-                <span className="block text-xl font-bold text-blue-600">{progress}%</span>
-            </div>
-        </div>
+        <button onClick={downloadPDF} disabled={exporting} className="bg-gray-800 text-white px-4 py-2 rounded-lg text-sm shadow-lg">
+            {exporting ? '...' : '📥 دانلود گزارش'}
+        </button>
       </div>
 
       <div className="max-w-4xl mx-auto bg-gray-200 rounded-full h-2.5 mb-10 overflow-hidden">
@@ -104,47 +166,44 @@ export default function ProjectDetail() {
       </div>
 
       <div ref={pdfRef} className="max-w-4xl mx-auto rounded-2xl overflow-hidden p-1 bg-white border border-gray-200">
-        <div className="p-6 flex justify-between items-center bg-gray-50 border-b">
-          <h2 className="font-bold text-gray-700">لیست وظایف و مراحل</h2>
-          <span className="text-xs text-gray-400">تاریخ: {new Date().toLocaleDateString('fa-IR')}</span>
-        </div>
-
+        <div className="p-6 bg-gray-50 border-b"><h2 className="font-bold text-gray-700">لیست وظایف</h2></div>
         <div>
           {tasks.map((task) => (
-            <div key={task.id} className="p-5 flex items-center justify-between border-b last:border-0" style={{ backgroundColor: task.status === 'done' ? '#eff6ff' : '#ffffff' }}>
-              <div className="flex items-center gap-4 relative z-0">
-                
-                {/* دکمه اصلاح شده با z-index بالا */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation(); // جلوگیری از تداخل
-                    toggleTask(task.id, task.status);
-                  }}
-                  className="w-8 h-8 rounded-full flex items-center justify-center border-2 transition-transform active:scale-90 relative z-10 cursor-pointer"
-                  style={{
-                    backgroundColor: task.status === 'done' ? '#22c55e' : 'white',
-                    borderColor: task.status === 'done' ? '#22c55e' : '#d1d5db',
-                    color: '#ffffff'
-                  }}
-                >
-                  {task.status === 'done' && '✓'}
-                </button>
-                
-                <p className="font-medium text-lg cursor-pointer" 
-                   onClick={() => toggleTask(task.id, task.status)}
-                   style={{ color: task.status === 'done' ? '#9ca3af' : '#1f2937', textDecoration: task.status === 'done' ? 'line-through' : 'none' }}>
-                  {task.title}
-                </p>
-              </div>
+            <div key={task.id} className="p-5 flex flex-col gap-2 border-b last:border-0" style={{ backgroundColor: task.status === 'done' ? '#eff6ff' : '#ffffff' }}>
               
-              <span className="text-xs px-2 py-1 rounded border" style={{ backgroundColor: task.status === 'done' ? '#dcfce7' : '#fefce8', color: task.status === 'done' ? '#15803d' : '#a16207' }}>
-                {task.status === 'done' ? 'تکمیل' : 'جاری'}
-              </span>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); toggleTask(task.id, task.status); }}
+                    className="w-8 h-8 rounded-full flex items-center justify-center border-2 cursor-pointer z-10"
+                    style={{ backgroundColor: task.status === 'done' ? '#22c55e' : 'white', borderColor: task.status === 'done' ? '#22c55e' : '#d1d5db', color: '#ffffff' }}
+                  >
+                    {task.status === 'done' && '✓'}
+                  </button>
+                  <p className="font-medium text-lg cursor-pointer" onClick={() => setSelectedTask(task)}>
+                    {task.title}
+                  </p>
+                </div>
+                
+                {/* دکمه ویرایش جزئیات */}
+                <button 
+                  onClick={() => setSelectedTask(task)}
+                  className="text-xs text-blue-500 bg-blue-50 px-2 py-1 rounded hover:bg-blue-100"
+                >
+                  {task.description ? '📝 ویرایش جزئیات' : '➕ افزودن جزئیات'}
+                </button>
+              </div>
+
+              {/* نمایش جزئیات زیر تسک (فقط اگر پر شده باشد) */}
+              {(task.description || task.start_date) && (
+                <div className="mr-12 text-sm text-gray-500 bg-gray-50 p-2 rounded border border-gray-100 mt-1">
+                   {task.start_date && <span className="ml-4">📅 {task.start_date} تا {task.end_date}</span>}
+                   {task.description && <p className="mt-1">{task.description}</p>}
+                </div>
+              )}
+
             </div>
           ))}
-        </div>
-        <div className="p-4 text-center text-xs mt-4 border-t bg-gray-50 text-gray-400">
-            گزارش سیستمی دیجی‌نامه
         </div>
       </div>
     </div>
