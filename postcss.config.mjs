@@ -1,10 +1,10 @@
 // postcss.config.mjs
-// این کد باید مشکل PostCSS/Turbopack را حل کند.
+// این کد، نام پکیج نصب‌شده شما را به صورت صحیح در PostCSS رجیستر می‌کند.
 
 const config = {
   plugins: {
-    // ✅ نام استاندارد پلاگین Tailwind CSS (نه نام کامل پکیج)
-    tailwindcss: {}, 
+    // ✅ نام کامل پکیج PostCSS Wrapper برای Tailwind v4
+    "@tailwindcss/postcss": {}, 
     autoprefixer: {},
   },
 };
