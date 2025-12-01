@@ -1,390 +1,302 @@
 "use client";
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import html2canvas from 'html2canvas';
-import jsPDF from 'jspdf';
-import DatePicker from "react-multi-date-picker";
-import persian from "react-date-object/calendars/persian";
-import persian_fa from "react-date-object/locales/persian_fa";
+import { useRouter } from 'next/navigation';
 
-// انواع داده‌ها
-type ChecklistItem = { id: number; title: string; is_checked: boolean; };
-type TaskStatus = 'not_started' | 'in_progress' | 'done' | 'blocked';
-
-type Task = { 
-  id: number; 
-  title: string; 
-  status: TaskStatus; 
-  description: string;
-  start_date: string;
-  end_date: string;
-  assigned_to: string;
-  blocked_reason: string; // دلیل توقف
+// نوع داده برای الگوها
+type Process = {
+  id: number;
+  title: string;
+  created_at: string;
 };
 
-type Profile = { id: string; full_name: string; role: string; };
+// نوع داده پروژه که شامل لیست خلاصه تسک‌ها هم هست (برای محاسبه وضعیت)
+type ProjectWithStats = {
+  id: number;
+  title: string;
+  status: string;
+  created_at: string;
+  project_tasks: { status: string; title: string; assigned_to: string }[]; 
+};
 
-export default function ProjectDetail() {
-  const params = useParams();
-  const projectId = params.id;
-  const router = useRouter();
-  const pdfRef = useRef<HTMLDivElement>(null);
-
-  const [projectTitle, setProjectTitle] = useState('');
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [users, setUsers] = useState<Profile[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [exporting, setExporting] = useState(false);
+export default function Dashboard() {
+  const [processes, setProcesses] = useState<Process[]>([]);
+  const [projects, setProjects] = useState<ProjectWithStats[]>([]);
   const [role, setRole] = useState<string>('staff');
-  
-  // استیت‌های ویرایش
-  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
-  const [checklists, setChecklists] = useState<ChecklistItem[]>([]); // چک‌لیست تسک انتخاب شده
-  const [newChecklistTitle, setNewChecklistTitle] = useState('');
+  const [loading, setLoading] = useState(true);
+  const router = useRouter();
 
-  // محاسبه پیشرفت (فقط تسک‌های Done حساب میشن)
-  const completedCount = tasks.filter(t => t.status === 'done').length;
-  const progress = tasks.length > 0 ? Math.round((completedCount / tasks.length) * 100) : 0;
-
-  useEffect(() => { if (projectId) fetchData(); }, [projectId]);
+  useEffect(() => {
+    fetchData();
+  }, []);
 
   const fetchData = async () => {
+    // 1. بررسی لاگین
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { router.push('/login'); return; }
 
-    const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-    if (profile) setRole(profile.role);
+    // 2. دریافت نقش کاربر
+    const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+    const userRole = profile?.role || 'staff';
+    setRole(userRole);
 
-    const { data: allUsers } = await supabase.from('profiles').select('*');
-    if (allUsers) setUsers(allUsers);
+    // 3. دریافت الگوها (جدیدترین اول)
+    const { data: procData } = await supabase.from('processes').select('*').order('created_at', { ascending: false });
+    if (procData) setProcesses(procData);
 
-    const { data: project } = await supabase.from('projects').select('title').eq('id', projectId).single();
-    if (project) setProjectTitle(project.title);
+    // 4. دریافت پروژه‌ها به همراه وضعیت تسک‌ها (Relational Query)
+    // این قسمت خیلی مهمه: ما تسک‌های هر پروژه رو هم میگیریم تا بتونیم درصد پیشرفت رو حساب کنیم
+    const { data: projData } = await supabase
+      .from('projects')
+      .select('*, project_tasks(status, title, assigned_to)')
+      .order('created_at', { ascending: false });
 
-    const { data: taskList } = await supabase.from('project_tasks').select('*').eq('project_id', projectId).order('id', { ascending: true });
+    if (projData) {
+        // *** فیلتر هوشمند ***
+        if (userRole === 'manager') {
+            // مدیر همه چیز را می‌بیند
+            // @ts-ignore
+            setProjects(projData);
+        } else {
+            // پرسنل فقط پروژه‌هایی را می‌بینند که در آن تسک دارند
+            const myProjects = projData.filter((p: any) => 
+                p.project_tasks.some((t: any) => t.assigned_to === user.id)
+            );
+            // @ts-ignore
+            setProjects(myProjects);
+        }
+    }
     
-    // تبدیل وضعیت‌های قدیمی (pending) به استاندارد جدید
-    const normalizedTasks = taskList?.map(t => ({
-      ...t,
-      status: (t.status === 'pending' ? 'not_started' : t.status) as TaskStatus
-    })) || [];
-
-    setTasks(normalizedTasks);
     setLoading(false);
   };
 
-  // دریافت چک‌لیست‌های یک تسک خاص
-  const fetchChecklists = async (taskId: number) => {
-    const { data } = await supabase.from('task_checklists').select('*').eq('task_id', taskId).order('id', { ascending: true });
-    setChecklists(data || []);
-  };
+  const startNewProject = async (processId: number, processTitle: string) => {
+    if (role !== 'manager') return alert("فقط مدیر می‌تواند پروژه جدید تعریف کند.");
+    const projectName = prompt(`نام پروژه جدید برای "${processTitle}" را وارد کنید:`);
+    if (!projectName) return;
 
-  // باز کردن مودال ویرایش
-  const openEditModal = (task: Task) => {
-    setSelectedTask(task);
-    fetchChecklists(task.id);
-  };
-
-  // تغییر سریع وضعیت (تیک زدن ساده) -> میره روی Done یا Not Started
-  const toggleQuickStatus = async (taskId: number, currentStatus: string) => {
-    const newStatus = currentStatus === 'done' ? 'not_started' : 'done';
-    const { error } = await supabase.from('project_tasks').update({ status: newStatus }).eq('id', taskId);
-    if (!error) setTasks(tasks.map(t => t.id === taskId ? { ...t, status: newStatus } : t));
-  };
-
-  // ذخیره تغییرات کلی تسک
-  const saveTaskDetails = async () => {
-    if (!selectedTask) return;
-    
-    const { error } = await supabase
-      .from('project_tasks')
-      .update({
-        description: selectedTask.description,
-        start_date: selectedTask.start_date,
-        end_date: selectedTask.end_date,
-        assigned_to: selectedTask.assigned_to,
-        status: selectedTask.status,
-        blocked_reason: selectedTask.status === 'blocked' ? selectedTask.blocked_reason : null // فقط اگه بلاک بود دلیل رو نگه دار
-      })
-      .eq('id', selectedTask.id);
-
-    if (error) alert("خطا در ذخیره!");
-    else {
-      setTasks(prev => prev.map(t => t.id === selectedTask.id ? selectedTask : t));
-      setSelectedTask(null);
-    }
-  };
-
-  // --- مدیریت چک‌لیست ---
-  const addChecklistItem = async () => {
-    if (!newChecklistTitle.trim() || !selectedTask) return;
-    const { data, error } = await supabase
-      .from('task_checklists')
-      .insert([{ task_id: selectedTask.id, title: newChecklistTitle }])
-      .select()
-      .single();
-    
-    if (!error && data) {
-      setChecklists([...checklists, data]);
-      setNewChecklistTitle('');
-    }
-  };
-
-  const toggleChecklist = async (itemId: number, currentVal: boolean) => {
-    const { error } = await supabase.from('task_checklists').update({ is_checked: !currentVal }).eq('id', itemId);
-    if (!error) {
-      setChecklists(checklists.map(c => c.id === itemId ? { ...c, is_checked: !currentVal } : c));
-    }
-  };
-
-  const deleteChecklist = async (itemId: number) => {
-    await supabase.from('task_checklists').delete().eq('id', itemId);
-    setChecklists(checklists.filter(c => c.id !== itemId));
-  };
-
-  // هلپر برای گرفتن نام کاربر
-  const getUserName = (userId: string) => users.find(u => u.id === userId)?.full_name || '...';
-
-  // هلپر رنگ وضعیت
-  const getStatusColor = (status: string) => {
-    switch(status) {
-      case 'done': return { bg: '#dcfce7', text: '#15803d', border: '#bbf7d0', label: 'انجام شد' };
-      case 'in_progress': return { bg: '#dbeafe', text: '#1e40af', border: '#bfdbfe', label: 'در حال انجام' };
-      case 'blocked': return { bg: '#fee2e2', text: '#991b1b', border: '#fecaca', label: 'متوقف شده' };
-      default: return { bg: '#f3f4f6', text: '#374151', border: '#e5e7eb', label: 'شروع نشده' };
-    }
-  };
-
-  const downloadPDF = async () => {
-    if (!pdfRef.current) return;
-    setExporting(true);
     try {
-      await new Promise(r => setTimeout(r, 100));
-      const canvas = await html2canvas(pdfRef.current, { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false });
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-      pdf.save(`${projectTitle}-report.pdf`);
-    } catch (err) { alert("خطا در PDF"); }
-    setExporting(false);
+      // الف) ساخت خود پروژه
+      const { data: projectData, error: projectError } = await supabase
+        .from('projects').insert([{ title: projectName, process_id: processId }]).select().single();
+      if (projectError) throw projectError;
+      
+      const newProjectId = projectData.id;
+
+      // ب) دریافت مراحلِ الگو (شامل توضیحات و...)
+      const { data: stagesData } = await supabase.from('stages').select('*').eq('process_id', processId);
+
+      if (stagesData && stagesData.length > 0) {
+        
+        // ج) دریافت تمام چک‌لیست‌های مربوط به این مراحل (یکجا)
+        const stageIds = stagesData.map(s => s.id);
+        const { data: checklistData } = await supabase.from('stage_checklists').select('*').in('stage_id', stageIds);
+
+        // د) حلقه برای ساخت تسک‌ها و کپی چک‌لیست‌ها
+        for (const stage of stagesData) {
+            // 1. ساخت تسک
+            const { data: taskData, error: taskError } = await supabase
+                .from('project_tasks')
+                .insert([{
+                    project_id: newProjectId,
+                    stage_id: stage.id,
+                    title: stage.title,
+                    status: 'not_started',
+                    // انتقال توضیحات الگو به تسک
+                    description: stage.description ? `(توضیحات فرآیند: ${stage.description})` : '',
+                }])
+                .select()
+                .single();
+            
+            if (taskError) throw taskError;
+
+            // 2. پیدا کردن چک‌لیست‌های این مرحله و کپی کردنشون
+            const relatedChecklists = checklistData?.filter(c => c.stage_id === stage.id) || [];
+            if (relatedChecklists.length > 0) {
+                const checklistsToCreate = relatedChecklists.map(c => ({
+                    task_id: taskData.id,
+                    title: c.title
+                }));
+                await supabase.from('task_checklists').insert(checklistsToCreate);
+            }
+        }
+      }
+      router.push(`/project/${newProjectId}`);
+    } catch (error) { console.error(error); alert("خطا در ساخت پروژه!"); }
   };
 
-  if (loading) return <div className="p-10 text-center">در حال بارگذاری...</div>;
+  const deleteProject = async (id: number) => {
+    if (role !== 'manager') return;
+    if(!confirm("آیا از حذف این پروژه اطمینان دارید؟")) return;
+    const { error } = await supabase.from('projects').delete().eq('id', id);
+    if (!error) setProjects(projects.filter(p => p.id !== id));
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.push('/login');
+  };
+
+  // --- تابع محاسبات هوشمند داشبورد ---
+  const getProjectStats = (tasks: { status: string, title: string }[]) => {
+    const total = tasks.length;
+    if (total === 0) return { progress: 0, currentStage: 'تعریف نشده', blockedCount: 0 };
+
+    const done = tasks.filter(t => t.status === 'done').length;
+    const blocked = tasks.filter(t => t.status === 'blocked').length;
+    
+    // محاسبه درصد
+    const progress = Math.round((done / total) * 100);
+
+    // پیدا کردن مرحله فعلی (اولین تسکی که انجام نشده)
+    const currentTask = tasks.find(t => t.status !== 'done');
+    const currentStage = currentTask ? currentTask.title : 'تکمیل شده ✅';
+
+    return { progress, currentStage, blockedCount: blocked };
+  };
+
+  if (loading) return <div className="p-10 text-center text-gray-500">در حال دریافت اطلاعات...</div>;
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6 md:p-12" dir="rtl">
+    <div className="min-h-screen bg-gray-50 p-8" dir="rtl">
       
-      {/* --- Modal ویرایش --- */}
-      {selectedTask && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-          <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-lg my-8">
-            <h3 className="text-xl font-bold mb-4 border-b pb-2">تنظیمات: {selectedTask.title}</h3>
+      {/* نوار وضعیت کاربر */}
+      <div className="max-w-6xl mx-auto bg-white p-4 rounded-xl shadow-sm mb-8 flex flex-wrap gap-4 justify-between items-center border border-blue-100">
+        <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+                <span className={`w-3 h-3 rounded-full ${role === 'manager' ? 'bg-purple-500' : 'bg-gray-400'}`}></span>
+                <span className="text-sm font-bold text-gray-700">
+                    {role === 'manager' ? 'مدیر سیستم 👑' : 'پرسنل اجرایی 👤'}
+                </span>
+            </div>
             
-            <div className="space-y-4">
-              {/* انتخاب وضعیت (Status) */}
-              <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
-                <label className="block text-sm font-bold text-gray-700 mb-2">وضعیت فعلی</label>
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    { val: 'not_started', label: '⚪ شروع نشده' },
-                    { val: 'in_progress', label: '🔵 در حال انجام' },
-                    { val: 'done', label: '🟢 انجام شد' },
-                    { val: 'blocked', label: '🔴 متوقف (Blocked)' }
-                  ].map(opt => (
-                    <button
-                      key={opt.val}
-                      onClick={() => setSelectedTask({...selectedTask, status: opt.val as TaskStatus})}
-                      className={`py-2 px-3 rounded-md text-sm transition border ${selectedTask.status === opt.val ? 'bg-white border-blue-500 shadow-sm ring-1 ring-blue-500 font-bold' : 'bg-transparent border-transparent hover:bg-white/50'}`}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
+            <Link href="/profile" className="text-sm text-blue-600 hover:underline bg-blue-50 px-3 py-1 rounded">
+                ⚙️ تنظیمات پروفایل
+            </Link>
 
-                {/* اگر وضعیت Blocked بود، دلیل بخواد */}
-                {selectedTask.status === 'blocked' && (
-                  <div className="mt-3 animate-pulse-once">
-                    <label className="block text-xs text-red-600 mb-1 font-bold">دلیل توقف (اجباری):</label>
-                    <input 
-                      type="text" 
-                      className="w-full border border-red-300 bg-red-50 rounded p-2 text-sm focus:ring-red-500"
-                      placeholder="مثلاً: منتظر تایید مشتری..."
-                      value={selectedTask.blocked_reason || ''}
-                      onChange={e => setSelectedTask({...selectedTask, blocked_reason: e.target.value})}
-                    />
-                  </div>
-                )}
-              </div>
-
-              {/* مسئول انجام */}
-              <div>
-                <label className="block text-sm text-gray-500 mb-1">مسئول انجام کار</label>
-                <select 
-                  className="w-full border p-2 rounded-lg bg-white"
-                  value={selectedTask.assigned_to || ''}
-                  onChange={e => setSelectedTask({...selectedTask, assigned_to: e.target.value})}
-                >
-                  <option value="">-- انتخاب کنید --</option>
-                  {users.map(u => (
-                    <option key={u.id} value={u.id}>{u.full_name}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* چک‌لیست */}
-              <div className="border-t pt-4">
-                <label className="block text-sm font-bold text-gray-700 mb-2">📋 چک‌لیست / زیرمجموعه‌ها</label>
-                <div className="space-y-2 mb-3">
-                  {checklists.map(item => (
-                    <div key={item.id} className="flex items-center gap-2 bg-gray-50 p-2 rounded hover:bg-gray-100">
-                      <input 
-                        type="checkbox" 
-                        checked={item.is_checked}
-                        onChange={() => toggleChecklist(item.id, item.is_checked)}
-                        className="w-4 h-4 text-blue-600 rounded"
-                      />
-                      <span className={`flex-1 text-sm ${item.is_checked ? 'line-through text-gray-400' : 'text-gray-700'}`}>{item.title}</span>
-                      <button onClick={() => deleteChecklist(item.id)} className="text-red-400 hover:text-red-600 text-xs px-2">✕</button>
-                    </div>
-                  ))}
-                </div>
-                <div className="flex gap-2">
-                  <input 
-                    type="text" 
-                    value={newChecklistTitle}
-                    onChange={e => setNewChecklistTitle(e.target.value)}
-                    placeholder="آیتم جدید..."
-                    className="flex-1 border p-1.5 rounded text-sm"
-                    onKeyDown={e => e.key === 'Enter' && addChecklistItem()}
-                  />
-                  <button onClick={addChecklistItem} className="bg-green-600 text-white px-3 rounded text-sm hover:bg-green-700">+</button>
-                </div>
-              </div>
-
-              {/* توضیحات و تاریخ */}
-              <div className="border-t pt-4">
-                  <div className="mb-3">
-                    <label className="block text-sm text-gray-500 mb-1">توضیحات کلی</label>
-                    <textarea 
-                      className="w-full border p-2 rounded-lg text-sm" rows={2}
-                      value={selectedTask.description || ''}
-                      onChange={e => setSelectedTask({...selectedTask, description: e.target.value})}
-                    ></textarea>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm text-gray-500 mb-1">شروع</label>
-                      <DatePicker calendar={persian} locale={persian_fa} value={selectedTask.start_date} onChange={(date) => setSelectedTask({...selectedTask, start_date: date?.toString() || ''})} inputClass="w-full border p-2 rounded-lg text-center text-sm" />
-                    </div>
-                    <div>
-                      <label className="block text-sm text-gray-500 mb-1">پایان</label>
-                      <DatePicker calendar={persian} locale={persian_fa} value={selectedTask.end_date} onChange={(date) => setSelectedTask({...selectedTask, end_date: date?.toString() || ''})} inputClass="w-full border p-2 rounded-lg text-center text-sm" />
-                    </div>
-                  </div>
-              </div>
-
-            </div>
-
-            <div className="flex gap-2 mt-6 pt-4 border-t sticky bottom-0 bg-white">
-              <button onClick={saveTaskDetails} className="flex-1 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 shadow-md">ذخیره نهایی</button>
-              <button onClick={() => setSelectedTask(null)} className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200">لغو</button>
-            </div>
-          </div>
+            {role === 'manager' && (
+                <Link href="/team" className="text-sm text-purple-600 hover:underline bg-purple-50 px-3 py-1 rounded">
+                    👥 مدیریت تیم
+                </Link>
+            )}
         </div>
-      )}
 
-      {/* --- هدر --- */}
-      <div className="max-w-4xl mx-auto mb-8 flex justify-between items-center">
-        <div>
-           <Link href="/" className="text-gray-500 text-sm hover:text-blue-600 mb-2 block">← بازگشت</Link>
-           <h1 className="text-3xl font-bold text-gray-900">🗂 {projectTitle}</h1>
-           <span className="text-xs text-gray-500 bg-gray-200 px-2 py-1 rounded mt-1 inline-block">نقش: {role === 'manager' ? 'مدیر' : 'پرسنل'}</span>
-        </div>
-        <button onClick={downloadPDF} disabled={exporting} className="bg-gray-800 text-white px-4 py-2 rounded-lg text-sm shadow-lg">
-            {exporting ? '...' : '📥 گزارش PDF'}
+        <button 
+          onClick={handleLogout} 
+          className="text-red-500 text-sm hover:bg-red-50 px-3 py-1 rounded transition border border-transparent hover:border-red-100"
+        >
+            خروج
         </button>
       </div>
 
-      <div className="max-w-4xl mx-auto bg-gray-200 rounded-full h-2.5 mb-10 overflow-hidden">
-        <div className="bg-blue-600 h-2.5 rounded-full transition-all duration-500" style={{ width: `${progress}%` }}></div>
+      {/* هدر */}
+      <div className="max-w-6xl mx-auto flex justify-between items-center mb-12">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-800">داشبورد دیجی‌نامه</h1>
+          <p className="text-gray-500 mt-1">مانیتورینگ هوشمند فرآیندها</p>
+        </div>
+        {role === 'manager' && (
+            <Link href="/builder">
+            <button className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition shadow-lg font-bold flex items-center gap-2">
+                <span>+</span> تعریف الگوی جدید
+            </button>
+            </Link>
+        )}
       </div>
 
-      <div ref={pdfRef} className="max-w-4xl mx-auto rounded-2xl overflow-hidden p-1 bg-white border border-gray-200 shadow-sm">
-        <div className="p-6 bg-gray-50 border-b flex justify-between items-center">
-            <h2 className="font-bold text-gray-700">لیست وظایف اجرایی</h2>
-            <div className="flex gap-2 text-xs text-gray-400">
-                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500"></span> جاری</span>
-                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500"></span> متوقف</span>
-                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500"></span> انجام شده</span>
+      <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8">
+        
+        {/* ستون راست: پروژه‌های جاری (هوشمند) */}
+        <div className="lg:col-span-2">
+          <h2 className="text-xl font-bold text-gray-700 mb-6 border-r-4 border-green-500 pr-2 flex items-center gap-2">
+            پروژه‌های جاری
+            <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">{projects.length}</span>
+          </h2>
+          
+          {projects.length === 0 ? (
+            <div className="bg-white border-2 border-dashed border-gray-200 rounded-xl p-10 text-center">
+              <p className="text-gray-400">
+                {role === 'manager' ? 'هنوز هیچ پروژه‌ای شروع نشده است.' : 'هیچ پروژه‌ای به شما اختصاص داده نشده است.'}
+              </p>
             </div>
-        </div>
-        <div>
-          {tasks.map((task) => {
-            const style = getStatusColor(task.status);
-            return (
-            <div key={task.id} className="p-5 flex flex-col gap-3 border-b last:border-0 hover:bg-gray-50 transition">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  {/* دکمه تیک سریع */}
-                  <button
-                    onClick={(e) => { e.stopPropagation(); toggleQuickStatus(task.id, task.status); }}
-                    className="w-8 h-8 rounded-full flex items-center justify-center border-2 cursor-pointer transition active:scale-95"
-                    style={{ backgroundColor: task.status === 'done' ? '#22c55e' : 'white', borderColor: task.status === 'done' ? '#22c55e' : '#d1d5db' }}
-                  >
-                    {task.status === 'done' && <span className="text-white">✓</span>}
-                  </button>
-                  
-                  <div>
-                    <p 
-                        className="font-bold text-lg cursor-pointer hover:text-blue-600 transition" 
-                        onClick={() => openEditModal(task)}
-                        style={{ textDecoration: task.status === 'done' ? 'line-through' : 'none', color: task.status === 'done' ? '#9ca3af' : '#1f2937' }}
-                    >
-                        {task.title}
-                    </p>
+          ) : (
+            <div className="space-y-4">
+              {projects.map((proj) => {
+                const stats = getProjectStats(proj.project_tasks);
+                const isBlocked = stats.blockedCount > 0;
+
+                return (
+                  <div key={proj.id} className={`bg-white p-5 rounded-xl shadow-sm border-2 transition hover:shadow-md ${isBlocked ? 'border-red-200 bg-red-50' : 'border-gray-100'}`}>
                     
-                    <div className="flex gap-2 mt-1">
-                        {/* برچسب وضعیت */}
-                        <span className="text-[10px] px-2 py-0.5 rounded border" style={{ backgroundColor: style.bg, color: style.text, borderColor: style.border }}>
-                            {style.label}
-                        </span>
-                        {/* مسئول */}
-                        {task.assigned_to && (
-                            <span className="text-[10px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded border border-gray-200">
-                                👤 {getUserName(task.assigned_to)}
-                            </span>
-                        )}
+                    <div className="flex justify-between items-start mb-4">
+                        <div className="flex items-center gap-3">
+                            <div className={`w-12 h-12 rounded-lg flex items-center justify-center text-xl shadow-inner ${isBlocked ? 'bg-red-100 text-red-600 animate-pulse' : 'bg-green-50 text-green-600'}`}>
+                                {isBlocked ? '⛔' : '📂'}
+                            </div>
+                            <div>
+                                <h3 className="font-bold text-gray-800 text-lg">{proj.title}</h3>
+                                {isBlocked ? (
+                                    <span className="text-xs font-bold text-red-600 flex items-center gap-1">
+                                        ⚠️ {stats.blockedCount} مرحله متوقف شده!
+                                    </span>
+                                ) : (
+                                    <p className="text-xs text-gray-400">مرحله فعلی: <span className="text-blue-600 font-bold">{stats.currentStage}</span></p>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="flex gap-2">
+                            <Link href={`/project/${proj.id}`}>
+                            <button className={`px-4 py-2 rounded-lg text-sm transition font-medium ${isBlocked ? 'bg-red-600 text-white hover:bg-red-700 shadow-red-200 shadow-lg' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
+                                {isBlocked ? 'بررسی مشکل' : 'مدیریت'}
+                            </button>
+                            </Link>
+                            {role === 'manager' && (
+                                <button onClick={() => deleteProject(proj.id)} className="text-gray-300 hover:text-red-600 px-2">✕</button>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* نوار پیشرفت */}
+                    <div className="mt-2">
+                        <div className="flex justify-between text-xs text-gray-500 mb-1">
+                            <span>پیشرفت کلی</span>
+                            <span>{stats.progress}%</span>
+                        </div>
+                        <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                            <div 
+                                className={`h-2 rounded-full transition-all duration-1000 ${isBlocked ? 'bg-red-500' : (stats.progress === 100 ? 'bg-green-500' : 'bg-blue-600')}`} 
+                                style={{ width: `${stats.progress}%` }}
+                            ></div>
+                        </div>
                     </div>
                   </div>
-                </div>
-
-                <button 
-                  onClick={() => openEditModal(task)}
-                  className="text-xs bg-white border border-gray-200 text-gray-600 px-3 py-1.5 rounded-lg hover:bg-gray-50 shadow-sm"
-                >
-                  ⚙️ مدیریت
-                </button>
-              </div>
-
-              {/* نمایش اطلاعات اضافی (دلیل توقف، تاریخ و...) */}
-              {(task.blocked_reason || task.description || task.start_date) && (
-                <div className="mr-12 text-sm bg-gray-50/50 p-3 rounded-lg border border-dashed border-gray-200 text-gray-600">
-                   {task.status === 'blocked' && task.blocked_reason && (
-                       <div className="text-red-600 font-bold mb-1 flex items-center gap-1">
-                           ⛔ دلیل توقف: {task.blocked_reason}
-                       </div>
-                   )}
-                   {task.start_date && <div className="text-xs mb-1">📅 {task.start_date} تا {task.end_date}</div>}
-                   {task.description && <p className="text-xs text-gray-500">{task.description}</p>}
-                </div>
-              )}
+                );
+              })}
             </div>
-          )})}
+          )}
         </div>
+
+        {/* ستون چپ: الگوها */}
+        <div>
+          <h2 className="text-xl font-bold text-gray-700 mb-6 border-r-4 border-blue-500 pr-2">الگوهای فرآیند</h2>
+          <div className="space-y-4">
+            {processes.map((proc) => (
+              <div key={proc.id} className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 hover:border-blue-200 transition">
+                <h3 className="font-bold text-gray-700 mb-3">{proc.title}</h3>
+                {role === 'manager' ? (
+                    <button onClick={() => startNewProject(proc.id, proc.title)} className="w-full bg-blue-50 text-blue-600 py-2.5 rounded-lg text-sm hover:bg-blue-600 hover:text-white transition font-medium border border-blue-100">
+                    + شروع پروژه جدید
+                    </button>
+                ) : (
+                    <div className="w-full bg-gray-50 text-gray-400 py-2.5 rounded-lg text-sm text-center border cursor-not-allowed">مخصوص مدیران</div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
       </div>
     </div>
   );
