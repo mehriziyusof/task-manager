@@ -1,33 +1,35 @@
+/* ⚠️ بسیار مهم: این خط باید حتماً اولین خط فایل باشد تا بیلد درست انجام شود */
+@import url('https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* 1. ایمپورت فونت وزیر */
-@import url('https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css');
-
 :root {
-  /* متغیرهای رنگی برای استفاده راحت‌تر */
-  --glass-border-light: rgba(255, 255, 255, 0.15); /* لبه روشن‌تر برای بالا */
-  --glass-border-dark: rgba(255, 255, 255, 0.05);  /* لبه تیره‌تر برای پایین */
+  /* تنظیم متغیرهای رنگی برای افکت شیشه‌ای حرفه‌ای */
+  --glass-border-light: rgba(255, 255, 255, 0.15); /* لبه روشن بالا/چپ */
+  --glass-border-dark: rgba(255, 255, 255, 0.05);  /* لبه تیره پایین/راست */
+  
+  /* گرادینت مورب برای سطح شیشه که حس بازتاب نور می‌دهد */
   --glass-surface: linear-gradient(
     145deg, 
     rgba(255, 255, 255, 0.12) 0%, 
     rgba(255, 255, 255, 0.02) 100%
-  ); /* گرادینت مورب برای حس بازتاب نور */
+  );
 }
 
 body {
   font-family: 'Vazirmatn', sans-serif;
   @apply bg-gray-900 text-white antialiased overflow-hidden;
   
-  /* تصویر پس‌زمینه (اگر در layout.tsx نگذاشتی، اینجا فعال می‌ماند) */
+  /* تصویر پس‌زمینه با کیفیت */
   background-image: url('https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=2564&auto=format&fit=crop');
   background-size: cover;
   background-position: center;
   background-attachment: fixed;
 }
 
-/* لایه تاریک روی عکس برای خوانایی بیشتر متون */
+/* لایه تاریک روی عکس برای خوانایی بهتر متن‌ها */
 body::before {
   content: '';
   position: fixed;
@@ -35,35 +37,35 @@ body::before {
   left: 0;
   width: 100%;
   height: 100%;
-  background: rgba(0, 0, 0, 0.5); /* 50% تیرگی */
-  backdrop-filter: blur(3px); /* کمی تاری روی عکس اصلی برای تمرکز روی پنل‌ها */
+  background: rgba(0, 0, 0, 0.6); /* 60% تیرگی */
+  backdrop-filter: blur(8px);     /* تاری عکس پس‌زمینه */
   z-index: -1;
 }
 
 @layer components {
   
-  /* --- کلاس جادویی گلس (Liquid Glass) --- */
+  /* --- کلاس اصلی گلس (Liquid Glass) --- */
   .glass {
-    /* پس‌زمینه: به جای رنگ تخت، از گرادینت استفاده می‌کنیم تا حس نور داشته باشد */
+    /* پس‌زمینه گرادینت دار */
     background: var(--glass-surface);
     
-    /* تاری قدرتمند */
+    /* تاری شدید برای مات کردن پشت پنل */
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
     
-    /* بوردر هوشمند: بالا روشن‌تر، پایین تیره‌تر (افکت سه بعدی ظریف) */
+    /* بوردرهای ۳ بعدی (نور از بالا سمت چپ می‌تابد) */
     border-top: 1px solid var(--glass-border-light);
     border-left: 1px solid var(--glass-border-light);
     border-right: 1px solid var(--glass-border-dark);
     border-bottom: 1px solid var(--glass-border-dark);
     
-    /* سایه عمیق برای جدا شدن از پس‌زمینه */
+    /* سایه نرم + درخشش داخلی */
     box-shadow: 
-      0 4px 30px rgba(0, 0, 0, 0.1), /* سایه نرم */
-      inset 0 0 20px rgba(255, 255, 255, 0.02); /* درخشش داخلی */
+      0 8px 32px 0 rgba(0, 0, 0, 0.3),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.05);
   }
 
-  /* حالت هاور برای کارت‌های تعاملی */
+  /* افکت هاور برای دکمه‌ها و کارت‌های کوچک */
   .glass-hover {
     @apply transition-all duration-300 ease-out;
   }
@@ -75,12 +77,12 @@ body::before {
       rgba(255, 255, 255, 0.05) 100%
     );
     transform: translateY(-2px);
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
-    border-color: rgba(255, 255, 255, 0.3);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+    border-color: rgba(255, 255, 255, 0.25);
   }
 }
 
-/* --- اسکرول بار مدرن و باریک --- */
+/* --- اسکرول بار باریک و مدرن --- */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -93,14 +95,13 @@ body::before {
 ::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.1);
   border-radius: 50px;
-  backdrop-filter: blur(4px);
 }
 
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.3);
 }
 
-/* حذف هایلایت آبی پیش‌فرض موبایل */
+/* حذف هایلایت آبی در موبایل */
 * {
   -webkit-tap-highlight-color: transparent;
 }
