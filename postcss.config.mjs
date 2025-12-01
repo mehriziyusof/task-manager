@@ -2,10 +2,10 @@
 
 const config = {
   plugins: {
-    // نام صحیح پلاگین برای Tailwind CSS v4
-    tailwindcss: {}, 
-    // Autoprefixer: برای سازگاری بهتر با مرورگرهای مختلف
-    autoprefixer: {},
+    // ✅ استفاده از نام کامل پکیج نصب‌شده
+    "@tailwindcss/postcss": {}, 
+    // استفاده از Autoprefixer برای سازگاری مرورگرها
+    "autoprefixer": {}, 
   },
 };
 
