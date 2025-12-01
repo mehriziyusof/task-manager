@@ -30,8 +30,8 @@ export default function TeamManagement() {
       .eq('id', user.id)
       .single();
     
-    // استفاده از any برای جلوگیری از خطای احتمالی تایپ‌اسکریپت
-    const role = currentUser ? (currentUser as any).role : '';
+    // @ts-ignore
+    const role = currentUser?.role;
 
     if (role !== 'manager') {
         alert("شما دسترسی به این صفحه ندارید!");
@@ -48,7 +48,6 @@ export default function TeamManagement() {
       .select('*')
       .order('created_at', { ascending: false });
     
-    // اطمینان به سیستم که دیتا آرایه است
     if (data) {
         setUsers(data as any[]); 
     }

@@ -4,20 +4,19 @@ import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
-// نوع داده برای الگوها
 type Process = {
   id: number;
   title: string;
   created_at: string;
 };
 
-// نوع داده پروژه که شامل لیست خلاصه تسک‌ها هم هست (برای محاسبه وضعیت)
+// نوع داده پروژه (به‌روزرسانی شده برای شامل شدن assigned_to)
 type ProjectWithStats = {
   id: number;
   title: string;
   status: string;
   created_at: string;
-  project_tasks: { status: string; title: string }[]; 
+  project_tasks: { status: string; title: string; assigned_to: string }[]; 
 };
 
 export default function Dashboard() {
@@ -32,27 +31,33 @@ export default function Dashboard() {
   }, []);
 
   const fetchData = async () => {
-    // 1. بررسی لاگین
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { router.push('/login'); return; }
 
-    // 2. دریافت نقش کاربر
     const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
-    if (profile) setRole(profile.role);
+    const userRole = profile?.role || 'staff';
+    setRole(userRole);
 
-    // 3. دریافت الگوها (جدیدترین اول)
     const { data: procData } = await supabase.from('processes').select('*').order('created_at', { ascending: false });
     if (procData) setProcesses(procData);
 
-    // 4. دریافت پروژه‌ها به همراه وضعیت تسک‌ها (Relational Query)
-    // این قسمت خیلی مهمه: ما تسک‌های هر پروژه رو هم میگیریم تا بتونیم درصد پیشرفت رو حساب کنیم
     const { data: projData } = await supabase
       .from('projects')
-      .select('*, project_tasks(status, title)')
+      .select('*, project_tasks(status, title, assigned_to)')
       .order('created_at', { ascending: false });
 
-    // @ts-ignore
-    if (projData) setProjects(projData);
+    if (projData) {
+        if (userRole === 'manager') {
+            // @ts-ignore
+            setProjects(projData);
+        } else {
+            const myProjects = projData.filter((p: any) => 
+                p.project_tasks.some((t: any) => t.assigned_to === user.id)
+            );
+            // @ts-ignore
+            setProjects(myProjects);
+        }
+    }
     
     setLoading(false);
   };
@@ -63,25 +68,18 @@ export default function Dashboard() {
     if (!projectName) return;
 
     try {
-      // الف) ساخت خود پروژه
       const { data: projectData, error: projectError } = await supabase
         .from('projects').insert([{ title: projectName, process_id: processId }]).select().single();
       if (projectError) throw projectError;
       
       const newProjectId = projectData.id;
-
-      // ب) دریافت مراحلِ الگو (شامل توضیحات و...)
       const { data: stagesData } = await supabase.from('stages').select('*').eq('process_id', processId);
 
       if (stagesData && stagesData.length > 0) {
-        
-        // ج) دریافت تمام چک‌لیست‌های مربوط به این مراحل (یکجا)
         const stageIds = stagesData.map(s => s.id);
         const { data: checklistData } = await supabase.from('stage_checklists').select('*').in('stage_id', stageIds);
 
-        // د) حلقه برای ساخت تسک‌ها و کپی چک‌لیست‌ها
         for (const stage of stagesData) {
-            // 1. ساخت تسک
             const { data: taskData, error: taskError } = await supabase
                 .from('project_tasks')
                 .insert([{
@@ -89,7 +87,6 @@ export default function Dashboard() {
                     stage_id: stage.id,
                     title: stage.title,
                     status: 'not_started',
-                    // انتقال توضیحات الگو به تسک
                     description: stage.description ? `(توضیحات فرآیند: ${stage.description})` : '',
                 }])
                 .select()
@@ -97,7 +94,6 @@ export default function Dashboard() {
             
             if (taskError) throw taskError;
 
-            // 2. پیدا کردن چک‌لیست‌های این مرحله و کپی کردنشون
             const relatedChecklists = checklistData?.filter(c => c.stage_id === stage.id) || [];
             if (relatedChecklists.length > 0) {
                 const checklistsToCreate = relatedChecklists.map(c => ({
@@ -124,18 +120,14 @@ export default function Dashboard() {
     router.push('/login');
   };
 
-  // --- تابع محاسبات هوشمند داشبورد ---
   const getProjectStats = (tasks: { status: string, title: string }[]) => {
     const total = tasks.length;
     if (total === 0) return { progress: 0, currentStage: 'تعریف نشده', blockedCount: 0 };
 
     const done = tasks.filter(t => t.status === 'done').length;
     const blocked = tasks.filter(t => t.status === 'blocked').length;
-    
-    // محاسبه درصد
     const progress = Math.round((done / total) * 100);
 
-    // پیدا کردن مرحله فعلی (اولین تسکی که انجام نشده)
     const currentTask = tasks.find(t => t.status !== 'done');
     const currentStage = currentTask ? currentTask.title : 'تکمیل شده ✅';
 
@@ -147,18 +139,34 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-gray-50 p-8" dir="rtl">
       
-      {/* نوار وضعیت کاربر */}
-      <div className="max-w-6xl mx-auto bg-white p-4 rounded-xl shadow-sm mb-8 flex justify-between items-center border border-blue-100">
-        <div className="flex items-center gap-2">
-            <span className={`w-3 h-3 rounded-full ${role === 'manager' ? 'bg-purple-500' : 'bg-gray-400'}`}></span>
-            <span className="text-sm font-bold text-gray-700">
-                نقش شما: {role === 'manager' ? 'مدیر سیستم 👑' : 'پرسنل اجرایی 👤'}
-            </span>
+      <div className="max-w-6xl mx-auto bg-white p-4 rounded-xl shadow-sm mb-8 flex flex-wrap gap-4 justify-between items-center border border-blue-100">
+        <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+                <span className={`w-3 h-3 rounded-full ${role === 'manager' ? 'bg-purple-500' : 'bg-gray-400'}`}></span>
+                <span className="text-sm font-bold text-gray-700">
+                    {role === 'manager' ? 'مدیر سیستم 👑' : 'پرسنل اجرایی 👤'}
+                </span>
+            </div>
+            
+            <Link href="/profile" className="text-sm text-blue-600 hover:underline bg-blue-50 px-3 py-1 rounded">
+                ⚙️ تنظیمات پروفایل
+            </Link>
+
+            {role === 'manager' && (
+                <Link href="/team" className="text-sm text-purple-600 hover:underline bg-purple-50 px-3 py-1 rounded">
+                    👥 مدیریت تیم
+                </Link>
+            )}
         </div>
-        <button onClick={handleLogout} className="text-red-500 text-sm hover:bg-red-50 px-3 py-1 rounded transition border border-transparent hover:border-red-100">خروج از حساب</button>
+
+        <button 
+          onClick={handleLogout} 
+          className="text-red-500 text-sm hover:bg-red-50 px-3 py-1 rounded transition border border-transparent hover:border-red-100"
+        >
+            خروج
+        </button>
       </div>
 
-      {/* هدر */}
       <div className="max-w-6xl mx-auto flex justify-between items-center mb-12">
         <div>
           <h1 className="text-3xl font-bold text-gray-800">داشبورد دیجی‌نامه</h1>
@@ -175,7 +183,6 @@ export default function Dashboard() {
 
       <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8">
         
-        {/* ستون راست: پروژه‌های جاری (هوشمند) */}
         <div className="lg:col-span-2">
           <h2 className="text-xl font-bold text-gray-700 mb-6 border-r-4 border-green-500 pr-2 flex items-center gap-2">
             پروژه‌های جاری
@@ -184,12 +191,13 @@ export default function Dashboard() {
           
           {projects.length === 0 ? (
             <div className="bg-white border-2 border-dashed border-gray-200 rounded-xl p-10 text-center">
-              <p className="text-gray-400">هنوز هیچ پروژه‌ای شروع نشده است.</p>
+              <p className="text-gray-400">
+                {role === 'manager' ? 'هنوز هیچ پروژه‌ای شروع نشده است.' : 'هیچ پروژه‌ای به شما اختصاص داده نشده است.'}
+              </p>
             </div>
           ) : (
             <div className="space-y-4">
               {projects.map((proj) => {
-                // محاسبه آمار پروژه
                 const stats = getProjectStats(proj.project_tasks);
                 const isBlocked = stats.blockedCount > 0;
 
@@ -225,7 +233,6 @@ export default function Dashboard() {
                         </div>
                     </div>
 
-                    {/* نوار پیشرفت */}
                     <div className="mt-2">
                         <div className="flex justify-between text-xs text-gray-500 mb-1">
                             <span>پیشرفت کلی</span>
@@ -245,7 +252,6 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* ستون چپ: الگوها */}
         <div>
           <h2 className="text-xl font-bold text-gray-700 mb-6 border-r-4 border-blue-500 pr-2">الگوهای فرآیند</h2>
           <div className="space-y-4">

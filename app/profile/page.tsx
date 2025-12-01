@@ -27,8 +27,10 @@ export default function Profile() {
       .eq('id', user.id)
       .single();
     
-    if (data && (data as any).full_name) {
-        setFullName((data as any).full_name);
+    // @ts-ignore
+    if (data?.full_name) {
+        // @ts-ignore
+        setFullName(data.full_name);
     }
     
     setLoading(false);
