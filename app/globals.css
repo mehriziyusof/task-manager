@@ -3,9 +3,10 @@
 @tailwind utilities;
 
 :root {
-  /* متغیرهای رنگی برای استفاده در .glass */
+  /* پالت رنگی شیشه‌ای (Liquid Glass Palette) */
   --glass-border-light: rgba(255, 255, 255, 0.15);
   --glass-border-dark: rgba(255, 255, 255, 0.05);
+  
   --glass-surface: linear-gradient(
     145deg, 
     rgba(255, 255, 255, 0.12) 0%, 
@@ -15,12 +16,26 @@
 
 body {
   font-family: 'Vazirmatn', sans-serif;
-  /* ساده‌ترین حالت بک‌گراند بدون URL خارجی یا افکت پیچیده */
+  /* پس‌زمینه جامد برای جلوگیری از خطای بیلد */
   @apply bg-[#0D0D15] text-white antialiased overflow-hidden;
 }
 
+/* لایه تاریک برای ایجاد کنتراست */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(8px);
+  z-index: -1;
+}
+
 @layer components {
-  /* --- کلاس اصلی گلس (فقط فرمول پایه) --- */
+  
+  /* --- کلاس اصلی گلس --- */
   .glass {
     background: var(--glass-surface);
     backdrop-filter: blur(20px);
@@ -35,9 +50,24 @@ body {
       0 8px 32px 0 rgba(0, 0, 0, 0.3),
       inset 0 0 0 1px rgba(255, 255, 255, 0.05);
   }
+
+  .glass-hover {
+    @apply transition-all duration-300 ease-out;
+  }
+  
+  .glass-hover:hover {
+    background: linear-gradient(
+      145deg, 
+      rgba(255, 255, 255, 0.18) 0%, 
+      rgba(255, 255, 255, 0.05) 100%
+    );
+    transform: translateY(-2px);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+    border-color: rgba(255, 255, 255, 0.25);
+  }
 }
 
-/* --- شخصی‌سازی اسکرول‌بار (حفظ شد) --- */
+/* --- شخصی‌سازی اسکرول‌بار --- */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;

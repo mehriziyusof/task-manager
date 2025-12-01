@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import Link from "next/link";
+// اگر از next/router در page.tsx استفاده می‌کنید، نیازی به این import نیست، ولی اگر ارور داد، پاکش کنید.
+// import { useRouter } from 'next/navigation'; 
 
 export const metadata: Metadata = {
   title: "دیجی‌تسک | مدیریت پروژه",
@@ -15,7 +17,7 @@ export default function RootLayout({
   return (
     <html lang="fa" dir="rtl">
       <head>
-        {/* ✅ اصلاح مهم: بارگذاری فونت از اینجا انجام می‌شود تا بیلد سرور ارور ندهد */}
+        {/* لود فونت Vazirmatn از CDN برای جلوگیری از خطای بیلد */}
         <link 
           href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css" 
           rel="stylesheet" 
@@ -25,7 +27,7 @@ export default function RootLayout({
       
       <body className="flex h-screen w-screen overflow-hidden">
         
-        {/* کانتینر اصلی که فاصله‌ها را تنظیم می‌کند */}
+        {/* کانتینر اصلی که فاصله‌ها و لایه‌بندی فلکس را تنظیم می‌کند */}
         <div className="relative z-10 flex w-full h-full p-4 gap-4 md:gap-6 md:p-6">
           
           {/* --- سایدبار (منوی سمت راست) --- */}
@@ -55,7 +57,6 @@ export default function RootLayout({
 
               {/* بخش پایین: وضعیت اشتراک */}
               <div className="glass-hover p-4 rounded-2xl border border-white/5 relative overflow-hidden group cursor-pointer">
-                {/* افکت نوری پس‌زمینه کارت */}
                 <div className="absolute top-0 right-0 w-24 h-24 bg-purple-500/20 blur-2xl -mr-10 -mt-10 group-hover:bg-purple-500/30 transition-all" />
                 
                 <p className="text-xs text-white/60 mb-1 relative z-10">پلن فعلی شما</p>
@@ -85,7 +86,7 @@ export default function RootLayout({
   );
 }
 
-// کامپوننت کمکی برای لینک‌های منو (تمیز کردن کد اصلی)
+// کامپوننت کمکی برای لینک‌های منو
 function SidebarLink({ href, icon, label, active = false }: { href: string; icon: string; label: string; active?: boolean }) {
   return (
     <Link 
@@ -99,7 +100,7 @@ function SidebarLink({ href, icon, label, active = false }: { href: string; icon
       <span className={`text-xl transition-transform duration-300 ${!active && "group-hover:scale-110"}`}>{icon}</span>
       <span className="font-medium text-sm">{label}</span>
       
-      {/* نشانگر فعال بودن (نقطه کوچک) */}
+      {/* نشانگر فعال بودن */}
       {active && <div className="mr-auto w-1.5 h-1.5 rounded-full bg-blue-400 shadow-[0_0_10px_rgba(96,165,250,0.8)]" />}
     </Link>
   );
