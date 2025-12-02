@@ -1,11 +1,14 @@
 "use client";
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
-import { useRouter, useParams } from 'next/navigation'; // ✅ استفاده از useParams برای Next.js 16
+import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
-import { FiMessageSquare, FiFileText, FiDownload, FiUpload, FiUsers, FiClock, FiCheckSquare, FiPlus } from 'react-icons/fi';
+import { 
+  FiMessageSquare, FiFileText, FiDownload, FiUpload, 
+  FiUsers, FiClock, FiPlus, FiX, FiCheckSquare, FiActivity 
+} from 'react-icons/fi';
 
-// --- Types ---
+// --- تعاریف نوع داده (Types) ---
 type Project = {
     id: number;
     title: string;
@@ -21,20 +24,43 @@ type Task = {
     description: string | null;
     status: 'pending' | 'in_progress' | 'completed' | 'blocked';
     stage_title: string;
+    stage_id: number | null;
     assigned_to: string | null;
     due_date: string | null;
 };
 
-// --- MOCK Data Types ---
-type Comment = { id: number; text: string; user_name: string; created_at: string; };
-type Attachment = { id: number; name: string; size: string; type: string; url: string; };
+// نوع داده برای دریافت از دیتابیس (قبل از تبدیل)
+type RawTask = {
+    id: number;
+    title: string;
+    description: string | null;
+    status: 'pending' | 'in_progress' | 'completed' | 'blocked';
+    stage_id: number | null;
+    assigned_to: string | null; 
+    due_date: string | null;
+};
+
+type Comment = {
+    id: number;
+    text: string;
+    user_name: string;
+    created_at: string;
+};
+
+type Attachment = {
+    id: number;
+    name: string;
+    size: string;
+    type: string;
+    url: string;
+};
 
 // --- Cache ---
 let stageTitleCache: Record<number, string> = {}; 
 
 export default function ProjectDetails() {
     const router = useRouter();
-    const params = useParams(); // ✅ روش صحیح دریافت ID در کلاینت
+    const params = useParams();
     
     // تبدیل ایمن ID
     const projectIdString = Array.isArray(params?.id) ? params.id[0] : params?.id;
@@ -46,30 +72,17 @@ export default function ProjectDetails() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    // --- MOCK States ---
-    const [comments] = useState<Comment[]>([
-        { id: 1, text: "بررسی اولیه انجام شد.", user_name: "مدیر", created_at: "10:30" }
-    ]);
-    const [attachments] = useState<Attachment[]>([
-        { id: 1, name: "مستندات.pdf", size: "2 MB", type: "pdf", url: "#" }
-    ]);
-    const [newCommentText, setNewCommentText] = useState('');
+    // --- State برای مودال تسک ---
+    const [selectedTask, setSelectedTask] = useState<Task | null>(null);
 
+    // دریافت داده‌ها
     const fetchData = useCallback(async () => {
         if (!isValidId) return;
 
         setLoading(true);
         setError(null);
-        console.log("🚀 شروع دریافت اطلاعات برای پروژه:", projectId);
-
+        
         try {
-            // 0. بررسی نشست کاربر (Session Check)
-            const { data: { session }, error: authError } = await supabase.auth.getSession();
-            if (authError || !session) {
-                console.error("Auth Error:", authError);
-                throw new Error("لطفاً مجدداً وارد سیستم شوید.");
-            }
-
             // 1. دریافت پروژه
             const { data: projectData, error: projError } = await supabase
                 .from('projects')
@@ -77,13 +90,10 @@ export default function ProjectDetails() {
                 .eq('id', projectId)
                 .single();
 
-            if (projError) throw new Error(`خطا در دریافت پروژه: ${projError.message}`);
-            if (!projectData) throw new Error('پروژه پیدا نشد.');
-            
+            if (projError || !projectData) throw new Error('پروژه پیدا نشد.');
             setProject(projectData);
-            console.log("✅ پروژه دریافت شد:", projectData.title);
 
-            // 2. دریافت نام مراحل (برای نمایش در کانبان)
+            // 2. دریافت مراحل
             const { data: stagesData } = await supabase
                 .from('stages')
                 .select('id, title')
@@ -93,15 +103,14 @@ export default function ProjectDetails() {
                 stagesData.forEach(s => stageTitleCache[s.id] = s.title);
             }
 
-            // 3. دریافت تسک‌ها (ساده و بدون Join)
+            // 3. دریافت تسک‌ها
             const { data: rawTasks, error: taskError } = await supabase
                 .from('project_tasks')
                 .select('*')
                 .eq('project_id', projectId);
 
-            if (taskError) throw new Error(`خطا در دریافت تسک‌ها: ${taskError.message}`);
+            if (taskError) throw taskError;
 
-            // 4. ترکیب داده‌ها (Manual Join)
             const finalTasks: Task[] = (rawTasks || []).map((t: any) => ({
                 id: t.id,
                 title: t.title,
@@ -109,62 +118,39 @@ export default function ProjectDetails() {
                 status: t.status,
                 assigned_to: t.assigned_to,
                 due_date: t.due_date,
+                stage_id: t.stage_id,
                 stage_title: t.stage_id ? (stageTitleCache[t.stage_id] || 'سایر') : 'بدون مرحله'
             }));
 
             setTasks(finalTasks);
-            console.log("✅ تسک‌ها دریافت شدند:", finalTasks.length);
 
         } catch (err: any) {
-            console.error("❌ Critical Error:", err);
-            setError(err.message || "خطای ناشناخته در ارتباط با سرور");
+            console.error("Fetch Error:", err);
+            setError(err.message || "خطا در دریافت اطلاعات.");
         } finally {
             setLoading(false);
         }
     }, [projectId, isValidId]);
 
     useEffect(() => {
-        if (isValidId) {
-            fetchData();
-        } else if (params?.id) {
-            // اگر ID وجود دارد اما عدد نیست
-            setLoading(false);
-            setError("شناسه پروژه نامعتبر است.");
-        }
-    }, [isValidId, params?.id, fetchData]);
+        if (isValidId) fetchData();
+    }, [isValidId, fetchData]);
 
-    // --- Render Helpers ---
-    
-    if (loading) {
-        return (
-            <div className="flex w-full h-[80vh] items-center justify-center text-white/70">
-                <div className="text-center space-y-4">
-                    <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
-                    <p>در حال دریافت اطلاعات پروژه {isValidId ? projectId : ''}...</p>
-                </div>
-            </div>
-        );
-    }
+    // --- توابع هندلر ---
+    const openTaskModal = (task: Task) => {
+        setSelectedTask(task);
+    };
 
-    if (error) {
-        return (
-            <div className="p-10 flex justify-center">
-                <div className="glass p-8 rounded-3xl border border-red-500/30 max-w-md text-center">
-                    <h2 className="text-xl text-red-400 font-bold mb-2">خطا در بارگذاری</h2>
-                    <p className="text-white/70 mb-6">{error}</p>
-                    <Link href="/">
-                        <button className="bg-white/10 hover:bg-white/20 text-white px-6 py-2 rounded-xl transition">
-                            بازگشت به داشبورد
-                        </button>
-                    </Link>
-                </div>
-            </div>
-        );
-    }
+    const closeTaskModal = () => {
+        setSelectedTask(null);
+    };
 
+    // --- رندرینگ ---
+    if (loading) return <LoadingState />;
+    if (error) return <ErrorState message={error} />;
     if (!project) return null;
 
-    // گروه‌بندی تسک‌ها برای نمایش
+    // گروه‌بندی تسک‌ها
     const groupedTasks = tasks.reduce((acc, task) => {
         const key = task.stage_title;
         if (!acc[key]) acc[key] = [];
@@ -173,14 +159,15 @@ export default function ProjectDetails() {
     }, {} as Record<string, Task[]>);
 
     return (
-        <div className="p-6 md:p-10 text-white pb-20">
+        <div className="p-6 md:p-10 text-white pb-20 relative">
+            
             {/* Header */}
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 border-b border-white/10 pb-6">
+            <div className="flex justify-between items-center mb-8 border-b border-white/10 pb-6">
                 <div>
                     <h1 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400 mb-1">
                         {project.title}
                     </h1>
-                    <span className="text-xs text-white/50 bg-white/5 px-2 py-1 rounded-lg border border-white/5">
+                    <span className="text-xs text-white/50 bg-white/5 px-2 py-1 rounded-lg">
                         {new Date(project.created_at).toLocaleDateString('fa-IR')}
                     </span>
                 </div>
@@ -191,99 +178,252 @@ export default function ProjectDetails() {
                 </Link>
             </div>
 
-            <div className="flex flex-col lg:flex-row gap-8">
-                {/* ستون اصلی: تسک‌ها */}
-                <div className="flex-1 space-y-6">
-                    {Object.keys(groupedTasks).length === 0 ? (
-                        <div className="glass p-8 text-center text-white/50 rounded-2xl border-dashed border-2 border-white/10">
-                            هنوز هیچ تسکی برای این پروژه تعریف نشده است.
-                        </div>
-                    ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            {Object.entries(groupedTasks).map(([stage, stageTasks]) => (
-                                <div key={stage} className="space-y-3">
-                                    <h3 className="text-blue-300 font-bold px-2 border-r-2 border-blue-500">{stage}</h3>
-                                    <div className="space-y-3">
-                                        {stageTasks.map(task => (
-                                            <div key={task.id} className="glass glass-hover p-4 rounded-2xl border border-white/5 cursor-pointer group">
-                                                <div className="flex justify-between items-start mb-2">
-                                                    <h4 className="font-medium text-sm">{task.title}</h4>
-                                                    <span className={`text-[10px] px-2 py-0.5 rounded-md ${
-                                                        task.status === 'completed' ? 'bg-green-500/20 text-green-400' : 
-                                                        task.status === 'blocked' ? 'bg-red-500/20 text-red-400' : 
-                                                        'bg-yellow-500/10 text-yellow-300'
-                                                    }`}>
-                                                        {task.status}
-                                                    </span>
-                                                </div>
-                                                {task.description && <p className="text-xs text-white/50 line-clamp-2">{task.description}</p>}
+            {/* Kanban Board */}
+            <div className="flex overflow-x-auto pb-8 gap-6 scrollbar-hide">
+                {Object.entries(groupedTasks).map(([stage, stageTasks]) => (
+                    <div key={stage} className="min-w-[300px] w-[300px] flex-shrink-0">
+                        <div className="bg-white/5 rounded-xl p-4 border border-white/5 h-full">
+                            <h3 className="font-bold mb-4 text-blue-300 flex justify-between items-center">
+                                {stage}
+                                <span className="bg-black/20 text-xs px-2 py-1 rounded-full text-white/60">{stageTasks.length}</span>
+                            </h3>
+                            
+                            <div className="space-y-3">
+                                {stageTasks.map(task => (
+                                    <div 
+                                        key={task.id} 
+                                        onClick={() => openTaskModal(task)}
+                                        className="glass glass-hover p-4 rounded-xl border border-white/5 cursor-pointer group hover:border-blue-500/30 transition-all"
+                                    >
+                                        <div className="flex justify-between items-start mb-2">
+                                            <h4 className="font-medium text-sm text-white group-hover:text-blue-200">{task.title}</h4>
+                                        </div>
+                                        {task.status && (
+                                            <span className={`text-[10px] px-2 py-0.5 rounded-md ${
+                                                task.status === 'completed' ? 'bg-green-500/20 text-green-400' : 
+                                                task.status === 'blocked' ? 'bg-red-500/20 text-red-400' : 
+                                                'bg-yellow-500/10 text-yellow-300'
+                                            }`}>
+                                                {task.status}
+                                            </span>
+                                        )}
+                                        <div className="mt-3 flex items-center justify-between text-white/40 text-xs">
+                                            <div className="flex -space-x-2 space-x-reverse">
+                                                {/* آواتار کاربر (فعلا خالی) */}
+                                                <div className="w-6 h-6 rounded-full bg-white/10 border border-white/10 flex items-center justify-center">👤</div>
                                             </div>
-                                        ))}
+                                            {task.due_date && <span className="flex items-center gap-1"><FiClock/> {task.due_date}</span>}
+                                        </div>
                                     </div>
-                                </div>
-                            ))}
+                                ))}
+                                <button className="w-full py-2 rounded-lg border border-dashed border-white/20 text-white/40 text-sm hover:text-white hover:border-white/40 transition flex items-center justify-center gap-2">
+                                    <FiPlus /> افزودن تسک
+                                </button>
+                            </div>
                         </div>
-                    )}
+                    </div>
+                ))}
+                
+                {/* دکمه افزودن ستون جدید (نمایشی) */}
+                <div className="min-w-[300px] flex items-start justify-center">
+                    <button className="bg-white/5 hover:bg-white/10 text-white/50 py-3 px-6 rounded-xl transition flex items-center gap-2">
+                        <FiPlus /> مرحله جدید
+                    </button>
+                </div>
+            </div>
+
+            {/* --- MODAL: Task Details --- */}
+            {selectedTask && (
+                <TaskDetailModal 
+                    task={selectedTask} 
+                    onClose={closeTaskModal} 
+                />
+            )}
+
+        </div>
+    );
+}
+
+// --- کامپوننت‌های کمکی (Components) ---
+
+// 1. کامپوننت لودینگ
+const LoadingState = () => (
+    <div className="flex w-full h-[80vh] items-center justify-center text-white/70">
+        <div className="text-center space-y-4">
+            <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+            <p className="animate-pulse">در حال دریافت اطلاعات...</p>
+        </div>
+    </div>
+);
+
+// 2. کامپوننت خطا
+const ErrorState = ({ message }: { message: string }) => (
+    <div className="p-10 flex justify-center">
+        <div className="glass p-8 rounded-3xl border border-red-500/30 max-w-md text-center">
+            <h2 className="text-xl text-red-400 font-bold mb-2">خطا</h2>
+            <p className="text-white/70 mb-6">{message}</p>
+            <Link href="/">
+                <button className="bg-white/10 hover:bg-white/20 text-white px-6 py-2 rounded-xl transition">
+                    بازگشت
+                </button>
+            </Link>
+        </div>
+    </div>
+);
+
+// 3. کامپوننت مودال جزئیات تسک (قلب تپنده جدید)
+const TaskDetailModal = ({ task, onClose }: { task: Task; onClose: () => void }) => {
+    // استیت‌های داخلی مودال (کامنت و فایل موقت)
+    const [commentText, setCommentText] = useState('');
+    const [mockComments, setMockComments] = useState<Comment[]>([
+        { id: 1, text: "نیاز به بررسی بیشتر دارد.", user_name: "مدیر", created_at: "10:00" }
+    ]);
+
+    const handleSendComment = () => {
+        if(!commentText.trim()) return;
+        setMockComments([...mockComments, {
+            id: Date.now(),
+            text: commentText,
+            user_name: "شما",
+            created_at: "الان"
+        }]);
+        setCommentText('');
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
+            {/* Modal Content */}
+            <div 
+                className="glass w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-3xl border border-white/10 shadow-2xl relative animate-fade-in-up"
+                onClick={(e) => e.stopPropagation()} // جلوگیری از بسته شدن با کلیک روی مودال
+            >
+                {/* Header Image / Banner (Optional) */}
+                <div className="h-32 bg-gradient-to-r from-blue-900/40 to-purple-900/40 w-full relative">
+                    <button 
+                        onClick={onClose}
+                        className="absolute top-4 right-4 bg-black/20 hover:bg-red-500/80 text-white p-2 rounded-full transition backdrop-blur-md"
+                    >
+                        <FiX size={20} />
+                    </button>
                 </div>
 
-                {/* سایدبار: اطلاعات و امکانات */}
-                <div className="w-full lg:w-80 space-y-6 flex-shrink-0">
-                    {/* اطلاعات پروژه */}
-                    <div className="glass p-5 rounded-3xl border border-white/10">
-                        <h3 className="font-bold mb-4 flex items-center gap-2"><FiFileText className="text-blue-400"/> وضعیت کلی</h3>
-                        <div className="space-y-3 text-sm text-white/70">
-                            <div className="flex justify-between">
-                                <span>وضعیت:</span>
-                                <span className="text-white">{project.status}</span>
-                            </div>
-                            <div className="flex justify-between">
-                                <span>تعداد تسک‌ها:</span>
-                                <span className="text-white">{tasks.length}</span>
-                            </div>
+                <div className="p-6 md:p-8 space-y-8 -mt-12 relative z-10">
+                    
+                    {/* Title & Meta */}
+                    <div className="space-y-4">
+                        <div className="flex gap-2 mb-2">
+                            <span className="bg-black/40 backdrop-blur-md text-xs px-3 py-1 rounded-full text-blue-300 border border-white/10">
+                                {task.stage_title}
+                            </span>
+                            <span className={`text-xs px-3 py-1 rounded-full border border-white/10 backdrop-blur-md ${
+                                task.status === 'completed' ? 'bg-green-500/20 text-green-300' : 'bg-yellow-500/20 text-yellow-200'
+                            }`}>
+                                {task.status}
+                            </span>
                         </div>
+                        <h2 className="text-3xl font-bold text-white drop-shadow-md">{task.title}</h2>
                     </div>
 
-                    {/* نظرات (UI Only) */}
-                    <div className="glass p-5 rounded-3xl border border-white/10">
-                        <h3 className="font-bold mb-4 flex items-center gap-2"><FiMessageSquare className="text-pink-400"/> نظرات</h3>
-                        <div className="space-y-3 max-h-40 overflow-y-auto custom-scrollbar">
-                            {comments.map(c => (
-                                <div key={c.id} className="bg-white/5 p-3 rounded-xl text-xs">
-                                    <p className="mb-1">{c.text}</p>
-                                    <span className="text-white/30 block text-left">{c.created_at}</span>
+                    <div className="flex flex-col md:flex-row gap-8">
+                        {/* Main Content (Left) */}
+                        <div className="flex-1 space-y-8">
+                            
+                            {/* Description */}
+                            <div className="space-y-3">
+                                <h3 className="flex items-center gap-2 text-lg font-bold text-white/90">
+                                    <FiFileText /> توضیحات
+                                </h3>
+                                <div className="bg-white/5 p-4 rounded-xl text-sm text-white/80 leading-relaxed border border-white/5 min-h-[100px]">
+                                    {task.description || "توضیحاتی برای این تسک ثبت نشده است."}
                                 </div>
-                            ))}
-                        </div>
-                        <div className="mt-3 flex gap-2">
-                            <input 
-                                className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-1 text-xs focus:outline-none focus:border-pink-500" 
-                                placeholder="نظر جدید..."
-                                value={newCommentText}
-                                onChange={(e) => setNewCommentText(e.target.value)}
-                            />
-                            <button className="bg-pink-500/20 text-pink-400 p-2 rounded-lg hover:bg-pink-500 hover:text-white transition">
-                                <FiPlus />
-                            </button>
-                        </div>
-                    </div>
+                            </div>
 
-                    {/* پیوست‌ها (UI Only) */}
-                    <div className="glass p-5 rounded-3xl border border-white/10">
-                        <h3 className="font-bold mb-4 flex items-center gap-2"><FiDownload className="text-emerald-400"/> فایل‌ها</h3>
-                        <div className="space-y-2">
-                            {attachments.map(f => (
-                                <div key={f.id} className="flex justify-between items-center bg-white/5 p-2 rounded-lg text-xs hover:bg-white/10 cursor-pointer transition">
-                                    <span className="truncate max-w-[150px]">{f.name}</span>
-                                    <span className="text-white/40">{f.type}</span>
+                            {/* Checklist (Mock) */}
+                            <div className="space-y-3">
+                                <h3 className="flex items-center gap-2 text-lg font-bold text-white/90">
+                                    <FiCheckSquare /> چک‌لیست
+                                </h3>
+                                <div className="space-y-2">
+                                    <div className="flex items-center gap-3 bg-white/5 p-3 rounded-xl border border-white/5">
+                                        <input type="checkbox" className="w-4 h-4 rounded border-white/30 bg-transparent accent-blue-500" />
+                                        <span className="text-sm text-white/80 line-through opacity-50">بررسی اولیه فایل‌ها</span>
+                                    </div>
+                                    <div className="flex items-center gap-3 bg-white/5 p-3 rounded-xl border border-white/5">
+                                        <input type="checkbox" className="w-4 h-4 rounded border-white/30 bg-transparent accent-blue-500" />
+                                        <span className="text-sm text-white/80">تایید نهایی مشتری</span>
+                                    </div>
+                                    <button className="text-xs text-white/50 hover:text-white flex items-center gap-1 mt-2">
+                                        <FiPlus /> افزودن آیتم
+                                    </button>
                                 </div>
-                            ))}
+                            </div>
+
+                            {/* Comments */}
+                            <div className="space-y-4 pt-6 border-t border-white/10">
+                                <h3 className="flex items-center gap-2 text-lg font-bold text-white/90">
+                                    <FiActivity /> فعالیت‌ها و نظرات
+                                </h3>
+                                
+                                <div className="flex gap-3">
+                                    <div className="w-8 h-8 rounded-full bg-purple-500 flex items-center justify-center text-white text-xs font-bold">ME</div>
+                                    <div className="flex-1 space-y-2">
+                                        <input 
+                                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500 transition placeholder:text-white/30"
+                                            placeholder="نوشتن نظر..."
+                                            value={commentText}
+                                            onChange={(e) => setCommentText(e.target.value)}
+                                            onKeyDown={(e) => e.key === 'Enter' && handleSendComment()}
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="space-y-4 mt-4">
+                                    {mockComments.map(c => (
+                                        <div key={c.id} className="flex gap-3 animate-fade-in-up">
+                                            <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white/50 text-xs">👤</div>
+                                            <div className="space-y-1">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-sm font-bold text-white">{c.user_name}</span>
+                                                    <span className="text-xs text-white/30">{c.created_at}</span>
+                                                </div>
+                                                <p className="text-sm text-white/80 bg-white/5 p-3 rounded-xl rounded-tl-none border border-white/5">
+                                                    {c.text}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
                         </div>
-                        <button className="w-full mt-4 border border-dashed border-white/20 text-white/50 py-2 rounded-xl text-xs hover:border-emerald-400 hover:text-emerald-400 transition">
-                            + آپلود فایل
-                        </button>
+
+                        {/* Sidebar (Right) - Actions */}
+                        <div className="w-full md:w-48 space-y-6 flex-shrink-0">
+                            <div className="space-y-2">
+                                <span className="text-xs font-bold text-white/50 uppercase">افزودن به کارت</span>
+                                <button className="w-full flex items-center gap-2 bg-white/5 hover:bg-white/10 text-white/80 py-2 px-3 rounded-lg text-sm transition text-right">
+                                    <FiUsers size={14} /> اعضا
+                                </button>
+                                <button className="w-full flex items-center gap-2 bg-white/5 hover:bg-white/10 text-white/80 py-2 px-3 rounded-lg text-sm transition text-right">
+                                    <FiCheckSquare size={14} /> چک‌لیست
+                                </button>
+                                <button className="w-full flex items-center gap-2 bg-white/5 hover:bg-white/10 text-white/80 py-2 px-3 rounded-lg text-sm transition text-right">
+                                    <FiClock size={14} /> تاریخ سررسید
+                                </button>
+                                <button className="w-full flex items-center gap-2 bg-white/5 hover:bg-white/10 text-white/80 py-2 px-3 rounded-lg text-sm transition text-right">
+                                    <FiUpload size={14} /> پیوست فایل
+                                </button>
+                            </div>
+
+                            <div className="space-y-2">
+                                <span className="text-xs font-bold text-white/50 uppercase">عملیات</span>
+                                <button className="w-full flex items-center gap-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 py-2 px-3 rounded-lg text-sm transition text-right">
+                                    <FiX size={14} /> حذف تسک
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
     );
-}
+};
