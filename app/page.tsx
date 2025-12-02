@@ -3,228 +3,262 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { FiPlus, FiTrash2, FiActivity, FiFolder, FiLoader } from 'react-icons/fi';
 
-type Process = {
-  id: number;
-  title: string;
-  created_at: string;
-};
-
+// نوع داده پروژه برای نمایش در داشبورد
 type ProjectWithStats = {
   id: number;
   title: string;
   status: string;
   created_at: string;
-  project_tasks: { status: string; title: string; assigned_to: string }[]; 
+  project_tasks: { status: string; }[]; 
 };
 
 export default function Dashboard() {
-  const [processes, setProcesses] = useState<Process[]>([]);
   const [projects, setProjects] = useState<ProjectWithStats[]>([]);
-  const [role, setRole] = useState('staff');
   const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false); // لودینگ ساخت پروژه
+  const [newProjectName, setNewProjectName] = useState('');
+  const [showModal, setShowModal] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
     fetchData();
   }, []);
 
-  const calculateStats = (tasks: ProjectWithStats['project_tasks']) => {
-    const total = tasks?.length || 0;
-    if (total === 0) return { total, completed: 0, progress: 0, assigned: 0, isBlocked: false };
-
-    const completed = tasks.filter(t => t.status === 'completed').length;
-    const progress = Math.round((completed / total) * 100);
-    const assigned = tasks.filter(t => t.assigned_to).length;
-    const isBlocked = assigned === 0 && total > 0; 
-
-    return { total, completed, progress, assigned, isBlocked };
-  };
-
   const fetchData = async () => {
-    setLoading(true);
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { router.push('/login'); return; }
 
-    const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
-    const userRole = profile?.role || 'staff';
-    setRole(userRole);
-
-    const { data: procData } = await supabase.from('processes').select('*').order('created_at', { ascending: false });
-    if (procData) setProcesses(procData);
-
-    // کوئری تسک‌های پروژه
-    const { data: projData } = await supabase
+    // دریافت پروژه‌ها به همراه وضعیت تسک‌ها
+    const { data: projData, error } = await supabase
       .from('projects')
       .select(`
-        id, 
-        title, 
-        status, 
-        created_at,
-        project_tasks (status, title, assigned_to)
+        id, title, status, created_at,
+        project_tasks (status)
       `)
       .order('created_at', { ascending: false });
 
-    if (projData) {
-      const projectsWithStats = (projData as ProjectWithStats[]).map(proj => ({
-        ...proj,
-        stats: calculateStats(proj.project_tasks)
-      }));
-      setProjects(projectsWithStats);
+    if (error) {
+        console.error("Error fetching projects:", error);
+    } else if (projData) {
+      setProjects(projData as any);
     }
-    
     setLoading(false);
   };
 
-  const startNewProject = async (processId: number, processTitle: string) => {
-    if (role !== 'manager') return;
-    // ... منطق شروع پروژه (مانند قبل)
-    
-    // 1. ایجاد یک پروژه جدید
-    const { data: newProject, error: projectError } = await supabase
-      .from('projects')
-      .insert({ title: processTitle, status: 'Active', process_id: processId })
-      .select('id')
-      .single();
+  // --- هندلر ایجاد پروژه جدید (Trello Style) ---
+  const handleCreateProject = async () => {
+    if (!newProjectName.trim()) return;
+    setCreating(true);
 
-    if (projectError || !newProject) {
-      alert('خطا در شروع پروژه جدید: ' + (projectError?.message || 'نامشخص'));
-      return;
+    try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error("کاربر یافت نشد");
+
+        // 1. ساخت یک 'Process' اختصاصی برای این پروژه (تا هر پروژه مراحل خود را داشته باشد)
+        const { data: proc, error: procError } = await supabase
+            .from('processes')
+            .insert({ title: newProjectName }) // عنوان فرآیند همان عنوان پروژه
+            .select()
+            .single();
+
+        if (procError) throw procError;
+        
+        // 2. ساخت پروژه و اتصال به Process جدید
+        const { data: newProj, error: projError } = await supabase
+            .from('projects')
+            .insert({ 
+                title: newProjectName, 
+                status: 'Active', 
+                process_id: proc.id 
+            })
+            .select()
+            .single();
+
+        if (projError) throw projError;
+
+        // 3. ساخت مراحل پیش‌فرض (Default Stages) برای این پروژه
+        const defaultStages = [
+            { process_id: proc.id, title: 'برای انجام (To Do)', order_index: 1 },
+            { process_id: proc.id, title: 'در حال انجام (Doing)', order_index: 2 },
+            { process_id: proc.id, title: 'تکمیل شده (Done)', order_index: 3 }
+        ];
+        
+        const { error: stagesError } = await supabase.from('stages').insert(defaultStages);
+        if (stagesError) throw stagesError;
+
+        // موفقیت
+        setShowModal(false);
+        setNewProjectName('');
+        // رفرش لیست یا هدایت به پروژه
+        fetchData(); 
+        // router.push(`/project/${newProj.id}`); // اگر می‌خواهید مستقیم وارد پروژه شود این را فعال کنید
+
+    } catch (error: any) {
+        alert("خطا در ساخت پروژه: " + error.message);
+    } finally {
+        setCreating(false);
     }
+  };
 
-    const projectId = newProject.id;
+  // --- هندلر حذف پروژه ---
+  const handleDeleteProject = async (e: React.MouseEvent, id: number) => {
+    e.stopPropagation(); // جلوگیری از کلیک شدن روی کارت و باز شدن پروژه
+    if (!confirm("آیا از حذف این پروژه و تمام اطلاعات آن مطمئن هستید؟")) return;
 
-    // 2. کپی کردن تسک‌ها از الگوی فرآیند
-    const { data: templateTasks } = await supabase
-      .from('process_tasks')
-      .select('title, description')
-      .eq('process_id', processId);
+    // حذف از دیتابیس
+    const { error } = await supabase.from('projects').delete().eq('id', id);
 
-    if (templateTasks && templateTasks.length > 0) {
-      const newTasks = templateTasks.map(task => ({
-        project_id: projectId,
-        title: task.title,
-        description: task.description,
-        status: 'pending', 
-      }));
-
-      const { error: tasksError } = await supabase.from('project_tasks').insert(newTasks);
-      if (tasksError) {
-        alert('خطا در کپی تسک‌ها: ' + tasksError.message);
-      }
+    if (!error) {
+        // حذف از استیت (UI)
+        setProjects(projects.filter(p => p.id !== id));
+    } else {
+        alert("خطا در حذف: " + error.message);
     }
-    
-    // 3. ریدایرکت به صفحه پروژه
-    router.push(`/project/${projectId}`);
+  };
+
+  // محاسبه درصد پیشرفت
+  const calculateProgress = (tasks: any[]) => {
+    if (!tasks || tasks.length === 0) return 0;
+    const completed = tasks.filter(t => t.status === 'completed').length;
+    return Math.round((completed / tasks.length) * 100);
   };
 
   if (loading) {
-    return (
-        <div className="flex-1 w-full flex items-center justify-center">
-            <div className="w-full glass p-5 rounded-3xl text-white/70 text-center">
-                <p className="animate-pulse">در حال بارگذاری اطلاعات...</p>
-            </div>
+      return (
+        <div className="flex w-full h-screen items-center justify-center text-white/50">
+            <FiLoader className="animate-spin text-3xl" />
         </div>
-    );
+      );
   }
 
   return (
-    <div className="space-y-10 p-8 text-white">
+    <div className="p-8 text-white min-h-screen">
       
-      {/* --- بخش پروژه‌های جاری --- */}
-      <div>
-        <h2 className="text-xl font-bold text-white mb-6 border-r-4 border-blue-400 pr-2 drop-shadow-md">پروژه‌های جاری</h2>
-        
-        {projects.length === 0 ? (
-          <div className="w-full glass p-5 rounded-3xl text-white/70 text-center">
-            پروژه فعالی وجود ندارد.
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {projects.map((project) => {
-              const stats = calculateStats(project.project_tasks);
-              const isBlocked = stats.isBlocked;
-
-              return (
-                <div 
-                  key={project.id} 
-                  className="glass glass-hover p-5 rounded-3xl transition duration-300 cursor-pointer"
-                  onClick={() => router.push(`/project/${project.id}`)}
-                >
-                  
-                  <div className="flex justify-between items-start mb-4">
-                    <h3 className="font-bold text-white text-lg">{project.title}</h3>
-                    <span 
-                      className={`text-xs font-medium px-3 py-1 rounded-full ${
-                        isBlocked ? 'bg-red-500/20 text-red-400' : 'bg-blue-500/20 text-blue-400'
-                      }`}
-                    >
-                      {isBlocked ? 'بلاک شده' : project.status}
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-4 text-center border-t border-white/10 pt-4">
-                    <div>
-                      <p className="text-xs text-white/60">تسک‌ها</p>
-                      <p className="font-bold text-white mt-1">{stats.total}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-white/60">انجام شده</p>
-                      <p className="font-bold text-emerald-400 mt-1">{stats.completed}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-white/60">تخصیص یافته</p>
-                      <p className="font-bold text-white mt-1">{stats.assigned}</p>
-                    </div>
-                  </div>
-
-                  <div className="mt-5">
-                    <div className="flex justify-between text-xs text-white/70 mb-1">
-                        <span>پیشرفت:</span>
-                        <span className="font-medium">{stats.progress}%</span>
-                    </div>
-                    <div className="w-full bg-white/10 rounded-full h-2">
-                        <div 
-                            className={`h-2 rounded-full transition-all duration-1000 ${isBlocked ? 'bg-red-500' : (stats.progress === 100 ? 'bg-green-500' : 'bg-blue-400')}`} 
-                            style={{ width: `${stats.progress}%` }}
-                        ></div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* --- بخش الگوهای فرآیند --- */}
-      <div>
-        <h2 className="text-xl font-bold text-white mb-6 border-r-4 border-purple-400 pr-2 drop-shadow-md">الگوهای فرآیند</h2>
-        
-        <div className="space-y-4">
-          {processes.map((proc) => (
-            <div 
-              key={proc.id} 
-              className="glass-hover p-5 rounded-3xl transition duration-300 border border-white/5 cursor-pointer flex justify-between items-center"
-            >
-              <h3 className="font-bold text-white text-lg">{proc.title}</h3>
-              
-              {role === 'manager' ? (
-                  <button 
-                      onClick={() => startNewProject(proc.id, proc.title)} 
-                      className="bg-blue-500/20 text-blue-400 py-2.5 px-6 rounded-xl text-sm hover:bg-blue-600 hover:text-white transition font-medium border border-blue-500/30"
-                  >
-                  + شروع پروژه جدید
-                  </button>
-              ) : (
-                  <div className="bg-gray-700/30 text-white/60 py-2.5 px-6 rounded-xl text-sm text-center">
-                  فقط مدیران می‌توانند شروع کنند
-                  </div>
-              )}
-            </div>
-          ))}
+      {/* هدر و دکمه ایجاد */}
+      <div className="flex flex-col md:flex-row justify-between items-center mb-10 gap-4">
+        <div>
+            <h1 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400">
+                میز کار من
+            </h1>
+            <p className="text-sm text-white/50 mt-2">مدیریت پروژه‌ها و تسک‌های روزانه</p>
         </div>
+        <button 
+            onClick={() => setShowModal(true)}
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-2xl transition shadow-lg shadow-blue-600/20 font-bold backdrop-blur-md"
+        >
+            <FiPlus size={20} /> پروژه جدید
+        </button>
       </div>
+
+      {/* لیست پروژه‌ها */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {/* دکمه بزرگ ایجاد پروژه (Card Style) */}
+        <button 
+            onClick={() => setShowModal(true)}
+            className="border-2 border-dashed border-white/10 rounded-[2rem] flex flex-col items-center justify-center text-white/30 hover:text-white/60 hover:border-white/20 hover:bg-white/5 transition min-h-[200px] gap-4 group"
+        >
+            <div className="p-4 rounded-full bg-white/5 group-hover:scale-110 transition">
+                <FiPlus size={32} />
+            </div>
+            <span className="font-bold">ایجاد پروژه جدید</span>
+        </button>
+
+        {/* کارت‌های پروژه */}
+        {projects.map((project) => {
+          const progress = calculateProgress(project.project_tasks);
+          
+          return (
+            <div 
+              key={project.id} 
+              onClick={() => router.push(`/project/${project.id}`)}
+              className="glass glass-hover p-6 rounded-[2rem] border border-white/5 cursor-pointer relative group overflow-hidden"
+            >
+                {/* گرادینت پس‌زمینه محو */}
+                <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 blur-[50px] rounded-full -mr-10 -mt-10 pointer-events-none" />
+
+                {/* هدر کارت */}
+                <div className="flex justify-between items-start mb-6 relative z-10">
+                    <div className="p-3 rounded-2xl bg-white/5 border border-white/5 text-blue-400 shadow-inner">
+                        <FiFolder size={24} />
+                    </div>
+                    {/* دکمه حذف پروژه */}
+                    <button 
+                        onClick={(e) => handleDeleteProject(e, project.id)}
+                        className="p-2 rounded-xl hover:bg-red-500/20 text-white/20 hover:text-red-400 transition z-20"
+                        title="حذف پروژه"
+                    >
+                        <FiTrash2 size={18} />
+                    </button>
+                </div>
+
+                {/* عنوان و تاریخ */}
+                <div className="mb-6 relative z-10">
+                    <h3 className="text-xl font-bold text-white mb-1 truncate">{project.title}</h3>
+                    <p className="text-xs text-white/40">{new Date(project.created_at).toLocaleDateString('fa-IR')}</p>
+                </div>
+
+                {/* نوار پیشرفت */}
+                <div className="space-y-2 relative z-10">
+                    <div className="flex justify-between text-xs text-white/60">
+                        <span>پیشرفت</span>
+                        <span>{progress}%</span>
+                    </div>
+                    <div className="w-full bg-black/20 rounded-full h-2 overflow-hidden border border-white/5">
+                        <div 
+                            className="h-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-full transition-all duration-1000" 
+                            style={{ width: `${progress}%` }}
+                        />
+                    </div>
+                </div>
+
+                {/* فوتر کارت */}
+                <div className="mt-6 pt-4 border-t border-white/5 flex items-center gap-2 text-xs text-white/50 relative z-10">
+                    <FiActivity />
+                    <span>{project.project_tasks?.length || 0} تسک فعال</span>
+                </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* مودال ساخت پروژه */}
+      {showModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
+            <div className="glass p-8 rounded-3xl w-full max-w-md border border-white/10 shadow-2xl animate-scale-up" onClick={(e) => e.stopPropagation()}>
+                <h3 className="text-xl font-bold text-white mb-2">نام پروژه جدید</h3>
+                <p className="text-sm text-white/50 mb-6">نام پروژه یا بورد خود را وارد کنید (مثلاً: کمپین تبلیغاتی)</p>
+                
+                <input 
+                    autoFocus
+                    value={newProjectName}
+                    onChange={(e) => setNewProjectName(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleCreateProject()}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-blue-500 focus:bg-white/10 transition mb-6 placeholder:text-white/20"
+                    placeholder="نام پروژه..."
+                />
+                
+                <div className="flex gap-3">
+                    <button 
+                        onClick={() => setShowModal(false)} 
+                        className="flex-1 py-3 rounded-xl bg-white/5 hover:bg-white/10 text-white transition font-medium"
+                    >
+                        انصراف
+                    </button>
+                    <button 
+                        onClick={handleCreateProject}
+                        disabled={!newProjectName.trim() || creating}
+                        className="flex-1 py-3 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 hover:shadow-lg hover:shadow-blue-600/20 text-white font-bold transition disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center gap-2"
+                    >
+                        {creating && <FiLoader className="animate-spin" />}
+                        ساختن
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
+
     </div>
   );
 }
