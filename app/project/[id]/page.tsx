@@ -7,7 +7,7 @@ import Link from 'next/link';
 import { FiMessageSquare, FiFileText, FiDownload, FiUpload, FiUsers, FiClock, FiCheckSquare, FiPlus, FiTrash } from 'react-icons/fi';
 
 
-// --- تعاریف نوع داده ---
+// --- تعاریف نوع داده (Types) ---
 type Project = {
     id: number;
     title: string;
@@ -42,13 +42,12 @@ type Attachment = {
     url: string;
 };
 
-// --- (جدید) تعریف نوع داده برای تسک خام بدون جوین ---
 type RawTask = {
     id: number;
     title: string;
     description: string | null;
     status: 'pending' | 'in_progress' | 'completed';
-    stage_id: number | null; // 🛑 این بار فقط ID مرحله را می‌گیریم
+    stage_id: number | null; // 🛑 فقط ID مرحله را می‌گیریم
     assigned_to: string | null; 
     due_date: string | null;
 };
@@ -145,7 +144,7 @@ export default function ProjectDetails({ params }: { params: { id: string } }) {
 
         } catch (err: any) {
             console.error("Critical Fetch Data Error:", err);
-            setError(err.message || 'خطا در بارگذاری اطلاعات پروژه. (Policyهای SELECT را چک کنید)');
+            setError(err.message || 'خطا در بارگذاری اطلاعات پروژه. (Policyها را چک کنید)');
         } finally {
             setLoading(false);
         }
@@ -202,7 +201,7 @@ export default function ProjectDetails({ params }: { params: { id: string } }) {
             <div className="p-8 text-red-400 font-bold glass rounded-3xl border border-red-500/50">
                 <p className='text-xl'>❌ خطا در بارگذاری اطلاعات</p>
                 <p className='text-sm mt-3 border-t border-white/20 pt-3'>جزئیات خطا: {error}</p>
-                <p className='text-xs mt-2 text-white/60'>(اگر خطای Policy است، Policyهای SELECT را برای جداول projects/project_tasks/stages چک کنید.)</p>
+                <p className='text-xs mt-2 text-white/60'>(Policyهای SELECT برای جداول projects/project_tasks/stages را چک کنید.)</p>
             </div>
         );
     }

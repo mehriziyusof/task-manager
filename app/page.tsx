@@ -4,8 +4,6 @@ import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
-// برای اینکه بتوانیم در Next.js از کامپوننت‌های فرعی استفاده کنیم، بهتر است آن‌ها را در یک فایل جداگانه (مثل components/ProjectCard) قرار دهیم، اما فعلاً در همین‌جا می‌آوریم.
-
 type Process = {
   id: number;
   title: string;
@@ -23,7 +21,7 @@ type ProjectWithStats = {
 export default function Dashboard() {
   const [processes, setProcesses] = useState<Process[]>([]);
   const [projects, setProjects] = useState<ProjectWithStats[]>([]);
-  const [role, setRole] = useState<string>('staff');
+  const [role, setRole] = useState('staff');
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
@@ -32,14 +30,12 @@ export default function Dashboard() {
   }, []);
 
   const calculateStats = (tasks: ProjectWithStats['project_tasks']) => {
-    const total = tasks.length;
+    const total = tasks?.length || 0;
     if (total === 0) return { total, completed: 0, progress: 0, assigned: 0, isBlocked: false };
 
     const completed = tasks.filter(t => t.status === 'completed').length;
-    const assigned = tasks.filter(t => t.assigned_to).length;
     const progress = Math.round((completed / total) * 100);
-    
-    // فرض می‌کنیم اگر هیچ تسکی تخصیص داده نشده باشد، پروژه بلاک است
+    const assigned = tasks.filter(t => t.assigned_to).length;
     const isBlocked = assigned === 0 && total > 0; 
 
     return { total, completed, progress, assigned, isBlocked };
@@ -57,6 +53,7 @@ export default function Dashboard() {
     const { data: procData } = await supabase.from('processes').select('*').order('created_at', { ascending: false });
     if (procData) setProcesses(procData);
 
+    // کوئری تسک‌های پروژه
     const { data: projData } = await supabase
       .from('projects')
       .select(`
@@ -69,7 +66,7 @@ export default function Dashboard() {
       .order('created_at', { ascending: false });
 
     if (projData) {
-      const projectsWithStats = projData.map(proj => ({
+      const projectsWithStats = (projData as ProjectWithStats[]).map(proj => ({
         ...proj,
         stats: calculateStats(proj.project_tasks)
       }));
@@ -81,7 +78,8 @@ export default function Dashboard() {
 
   const startNewProject = async (processId: number, processTitle: string) => {
     if (role !== 'manager') return;
-
+    // ... منطق شروع پروژه (مانند قبل)
+    
     // 1. ایجاد یک پروژه جدید
     const { data: newProject, error: projectError } = await supabase
       .from('projects')
@@ -107,7 +105,7 @@ export default function Dashboard() {
         project_id: projectId,
         title: task.title,
         description: task.description,
-        status: 'pending', // وضعیت پیش‌فرض
+        status: 'pending', 
       }));
 
       const { error: tasksError } = await supabase.from('project_tasks').insert(newTasks);
@@ -123,7 +121,6 @@ export default function Dashboard() {
   if (loading) {
     return (
         <div className="flex-1 w-full flex items-center justify-center">
-            {/* ✅ اعمال استایل گلس برای لودینگ */}
             <div className="w-full glass p-5 rounded-3xl text-white/70 text-center">
                 <p className="animate-pulse">در حال بارگذاری اطلاعات...</p>
             </div>
@@ -132,16 +129,15 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-10 p-8 text-white">
       
       {/* --- بخش پروژه‌های جاری --- */}
       <div>
-        {/* ✅ اصلاح رنگ برای پس‌زمینه دارک */}
         <h2 className="text-xl font-bold text-white mb-6 border-r-4 border-blue-400 pr-2 drop-shadow-md">پروژه‌های جاری</h2>
         
         {projects.length === 0 ? (
           <div className="w-full glass p-5 rounded-3xl text-white/70 text-center">
-            پروژه فعالی وجود ندارد. از بخش الگوهای فرآیند یک پروژه جدید شروع کنید.
+            پروژه فعالی وجود ندارد.
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -150,14 +146,12 @@ export default function Dashboard() {
               const isBlocked = stats.isBlocked;
 
               return (
-                // ✅ اعمال کلاس‌های Glassmorphism و Hover
                 <div 
                   key={project.id} 
                   className="glass glass-hover p-5 rounded-3xl transition duration-300 cursor-pointer"
                   onClick={() => router.push(`/project/${project.id}`)}
                 >
                   
-                  {/* عنوان و وضعیت */}
                   <div className="flex justify-between items-start mb-4">
                     <h3 className="font-bold text-white text-lg">{project.title}</h3>
                     <span 
@@ -169,7 +163,6 @@ export default function Dashboard() {
                     </span>
                   </div>
 
-                  {/* آمار پروژه */}
                   <div className="grid grid-cols-3 gap-4 text-center border-t border-white/10 pt-4">
                     <div>
                       <p className="text-xs text-white/60">تسک‌ها</p>
@@ -185,7 +178,6 @@ export default function Dashboard() {
                     </div>
                   </div>
 
-                  {/* نوار پیشرفت */}
                   <div className="mt-5">
                     <div className="flex justify-between text-xs text-white/70 mb-1">
                         <span>پیشرفت:</span>
@@ -207,12 +199,10 @@ export default function Dashboard() {
 
       {/* --- بخش الگوهای فرآیند --- */}
       <div>
-        {/* ✅ اصلاح رنگ برای پس‌زمینه دارک */}
         <h2 className="text-xl font-bold text-white mb-6 border-r-4 border-purple-400 pr-2 drop-shadow-md">الگوهای فرآیند</h2>
         
         <div className="space-y-4">
           {processes.map((proc) => (
-            // ✅ اعمال کلاس‌های Glassmorphism و Hover
             <div 
               key={proc.id} 
               className="glass-hover p-5 rounded-3xl transition duration-300 border border-white/5 cursor-pointer flex justify-between items-center"
