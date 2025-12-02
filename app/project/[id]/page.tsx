@@ -1,14 +1,14 @@
 "use client";
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
-import { useRouter, useParams } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { 
   FiMessageSquare, FiFileText, FiDownload, FiUpload, 
   FiUsers, FiClock, FiPlus, FiX, FiCheckSquare, FiActivity, FiChevronDown, FiCalendar, FiTrash2
 } from 'react-icons/fi';
 
-import DatePicker, { DateObject } from "react-multi-date-picker";
+import DatePicker from "react-multi-date-picker";
 import persian from "react-date-object/calendars/persian";
 import persian_fa from "react-date-object/locales/persian_fa";
 
@@ -46,20 +46,26 @@ type Project = {
     created_at: string; 
     process_id: number; 
     status: string; 
-    description: string | null; // اضافه شده برای سازگاری با نوع
+    description: string | null; 
+};
+
+type Stage = {
+    id: number;
+    title: string;
+    sort_order?: number;
 };
 
 let stageTitleCache: Record<number, string> = {}; 
 
 export default function ProjectDetails() {
     const params = useParams();
-    // مدیریت ایمن ID
     const idParam = params?.id;
     const projectIdString = Array.isArray(idParam) ? idParam[0] : idParam;
     const projectId = projectIdString ? parseInt(projectIdString) : NaN;
     const isValidId = !isNaN(projectId);
 
     const [project, setProject] = useState<Project | null>(null);
+    const [stages, setStages] = useState<Stage[]>([]); // استیت جدید برای نگهداری مراحل
     const [tasks, setTasks] = useState<Task[]>([]);
     const [teamMembers, setTeamMembers] = useState<UserProfile[]>([]);
     const [loading, setLoading] = useState(true);
@@ -78,10 +84,17 @@ export default function ProjectDetails() {
             if (projError || !projectData) throw new Error('پروژه پیدا نشد.');
             setProject(projectData);
 
-            // 2. مراحل
+            // 2. مراحل (Stages) - اصلاح شده برای ذخیره در استیت
             const { data: stagesData } = await supabase
-                .from('stages').select('id, title').eq('process_id', projectData.process_id);
-            if (stagesData) stagesData.forEach(s => stageTitleCache[s.id] = s.title);
+                .from('stages')
+                .select('id, title, sort_order')
+                .eq('process_id', projectData.process_id)
+                .order('sort_order', { ascending: true }); // مرتب‌سازی مراحل
+            
+            if (stagesData) {
+                setStages(stagesData); // ذخیره مراحل برای رندر کردن ستون‌ها
+                stagesData.forEach(s => stageTitleCache[s.id] = s.title);
+            }
 
             // 3. اعضا
             const { data: profiles } = await supabase.from('profiles').select('id, email, full_name, role');
@@ -106,8 +119,8 @@ export default function ProjectDetails() {
                     due_date: t.due_date,
                     stage_id: t.stage_id,
                     stage_title: t.stage_id ? (stageTitleCache[t.stage_id] || 'سایر') : 'بدون مرحله',
-                    checklist: [], 
-                    attachments: []
+                    checklist: t.checklist || [], 
+                    attachments: t.attachments || []
                 };
             });
             setTasks(finalTasks);
@@ -121,6 +134,45 @@ export default function ProjectDetails() {
     }, [projectId, isValidId]);
 
     useEffect(() => { if (isValidId) fetchData(); }, [isValidId, fetchData]);
+
+    // --- افزودن تسک جدید ---
+    const handleAddTask = async (stageId: number, stageTitle: string) => {
+        const tempTitle = "تسک جدید";
+        try {
+            // ایجاد تسک در دیتابیس
+            const { data, error } = await supabase
+                .from('project_tasks')
+                .insert({
+                    project_id: projectId,
+                    stage_id: stageId,
+                    title: tempTitle,
+                    status: 'pending'
+                })
+                .select()
+                .single();
+
+            if (error) throw error;
+            if (data) {
+                const newTask: Task = {
+                    id: data.id,
+                    title: data.title,
+                    description: null,
+                    status: 'pending',
+                    stage_id: stageId,
+                    stage_title: stageTitle,
+                    assigned_to: null,
+                    due_date: null,
+                    checklist: [],
+                    attachments: []
+                };
+                setTasks(prev => [...prev, newTask]);
+                // بلافاصله مودال را باز کن تا کاربر ویرایش کند
+                setSelectedTask(newTask);
+            }
+        } catch (err: any) {
+            alert("خطا در ساخت تسک: " + err.message);
+        }
+    };
 
     const updateTask = async (taskId: number, updates: Partial<Task>) => {
         // آپدیت لوکال
@@ -168,13 +220,6 @@ export default function ProjectDetails() {
     if (error) return <div className="p-10 text-center text-red-400">{error}</div>;
     if (!project) return null;
 
-    const groupedTasks = tasks.reduce((acc, task) => {
-        const key = task.stage_title;
-        if (!acc[key]) acc[key] = [];
-        acc[key].push(task);
-        return acc;
-    }, {} as Record<string, Task[]>);
-
     return (
         <div className="p-6 md:p-10 text-white pb-20 relative min-h-screen">
             {/* Header */}
@@ -202,41 +247,78 @@ export default function ProjectDetails() {
             </div>
 
             {/* Kanban Board */}
-            <div className="flex overflow-x-auto pb-8 gap-6 scrollbar-hide">
-                {Object.entries(groupedTasks).map(([stage, stageTasks]) => (
-                    <div key={stage} className="min-w-[300px] w-[300px] flex-shrink-0">
-                        <div className="bg-white/5 rounded-xl p-4 border border-white/5 h-full flex flex-col">
-                            <h3 className="font-bold mb-4 text-blue-300 flex justify-between items-center">
-                                {stage}
-                                <span className="bg-black/20 text-xs px-2 py-1 rounded-full text-white/60">{stageTasks.length}</span>
-                            </h3>
-                            <div className="space-y-3 flex-1 overflow-y-auto custom-scrollbar pr-1 max-h-[60vh]">
-                                {stageTasks.map(task => (
-                                    <div 
-                                        key={task.id} 
-                                        onClick={() => setSelectedTask(task)}
-                                        className="glass glass-hover p-4 rounded-xl border border-white/5 cursor-pointer group hover:border-blue-500/30 transition-all"
-                                    >
-                                        <div className="flex justify-between items-start mb-2">
-                                            <h4 className="font-medium text-sm text-white group-hover:text-blue-200">{task.title}</h4>
-                                        </div>
-                                        <div className="flex justify-between items-center mt-3">
-                                            <StatusBadge status={task.status} />
-                                            <div className="flex items-center gap-2">
-                                                {task.assigned_user_email && (
-                                                    <div className="w-5 h-5 rounded-full bg-blue-500 flex items-center justify-center text-[9px] text-white font-bold" title={task.assigned_user_email}>
-                                                        {task.assigned_user_email.charAt(0).toUpperCase()}
-                                                    </div>
-                                                )}
-                                                {task.due_date && <span className="text-[10px] text-white/40 flex items-center gap-1 bg-white/5 px-1.5 py-0.5 rounded"><FiClock/></span>}
+            <div className="flex overflow-x-auto pb-8 gap-6 scrollbar-hide h-[calc(100vh-200px)]">
+                {stages.map((stage) => {
+                    // فیلتر کردن تسک‌های مربوط به این مرحله
+                    const stageTasks = tasks.filter(t => t.stage_id === stage.id);
+                    
+                    return (
+                        <div key={stage.id} className="min-w-[300px] w-[300px] flex-shrink-0 h-full">
+                            <div className="bg-[#121212]/60 backdrop-blur-sm rounded-xl border border-white/5 h-full flex flex-col">
+                                {/* Column Header */}
+                                <div className="p-4 border-b border-white/5 flex justify-between items-center bg-white/5 rounded-t-xl">
+                                    <h3 className="font-bold text-blue-100 text-sm">
+                                        {stage.title}
+                                    </h3>
+                                    <span className="bg-black/40 text-xs px-2 py-1 rounded-full text-white/60 font-mono">
+                                        {stageTasks.length}
+                                    </span>
+                                </div>
+
+                                {/* Tasks Container */}
+                                <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-3">
+                                    {stageTasks.map(task => (
+                                        <div 
+                                            key={task.id} 
+                                            onClick={() => setSelectedTask(task)}
+                                            className="glass glass-hover p-4 rounded-xl border border-white/5 cursor-pointer group hover:border-blue-500/30 transition-all bg-[#1e1e2e]/80"
+                                        >
+                                            <div className="flex justify-between items-start mb-2">
+                                                <h4 className="font-medium text-sm text-white group-hover:text-blue-200 leading-snug">{task.title}</h4>
+                                            </div>
+                                            <div className="flex justify-between items-center mt-3 pt-2 border-t border-white/5">
+                                                <StatusBadge status={task.status} />
+                                                <div className="flex items-center gap-2">
+                                                    {task.assigned_user_email && (
+                                                        <div className="w-5 h-5 rounded-full bg-blue-600 flex items-center justify-center text-[9px] text-white font-bold ring-1 ring-white/10" title={task.assigned_user_email}>
+                                                            {task.assigned_user_email.charAt(0).toUpperCase()}
+                                                        </div>
+                                                    )}
+                                                </div>
                                             </div>
                                         </div>
+                                    ))}
+                                </div>
+
+                                {/* Add Task Button (Footer) */}
+                                <div className="p-3 pt-2">
+                                    <button 
+                                        onClick={() => handleAddTask(stage.id, stage.title)}
+                                        className="w-full flex items-center justify-center gap-2 py-2 rounded-lg border border-dashed border-white/10 text-white/40 hover:text-white hover:bg-white/5 hover:border-white/30 transition text-sm"
+                                    >
+                                        <FiPlus /> افزودن تسک
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })}
+                
+                {/* ستون برای تسک‌های بدون مرحله (جهت اطمینان) */}
+                {tasks.filter(t => !t.stage_id).length > 0 && (
+                     <div className="min-w-[300px] w-[300px] flex-shrink-0 h-full">
+                        <div className="bg-red-900/10 rounded-xl p-4 border border-red-500/20 h-full flex flex-col">
+                            <h3 className="font-bold mb-4 text-red-300">دسته‌بندی نشده</h3>
+                            <div className="space-y-3 flex-1 overflow-y-auto">
+                                {tasks.filter(t => !t.stage_id).map(task => (
+                                    <div key={task.id} onClick={() => setSelectedTask(task)} className="bg-white/5 p-4 rounded-xl cursor-pointer">
+                                        {task.title}
                                     </div>
                                 ))}
                             </div>
                         </div>
-                    </div>
-                ))}
+                     </div>
+                )}
             </div>
 
             {/* Modal */}
@@ -253,17 +335,17 @@ export default function ProjectDetails() {
     );
 }
 
-// --- Helper Components ---
+// --- Helper Components --- (بدون تغییر)
 
 const StatusBadge = ({ status }: { status: TaskStatus }) => {
     const map = {
-        'pending': { color: 'bg-gray-500/20 text-gray-400', label: 'شروع نشده' },
-        'in_progress': { color: 'bg-yellow-500/20 text-yellow-400', label: 'در حال انجام' },
-        'completed': { color: 'bg-green-500/20 text-green-400', label: 'تکمیل شده' },
-        'blocked': { color: 'bg-red-500/20 text-red-400', label: 'متوقف شده' },
+        'pending': { color: 'bg-gray-500/20 text-gray-300', label: 'شروع نشده' },
+        'in_progress': { color: 'bg-blue-500/20 text-blue-300', label: 'در حال انجام' },
+        'completed': { color: 'bg-green-500/20 text-green-300', label: 'تکمیل شده' },
+        'blocked': { color: 'bg-red-500/20 text-red-300', label: 'متوقف شده' },
     };
     const { color, label } = map[status] || map['pending'];
-    return <span className={`text-[10px] px-2 py-0.5 rounded-md ${color}`}>{label}</span>;
+    return <span className={`text-[9px] px-2 py-0.5 rounded ${color}`}>{label}</span>;
 };
 
 const TaskDetailModal = ({ task, teamMembers, onClose, onUpdate, onDelete }: 
@@ -277,6 +359,9 @@ const TaskDetailModal = ({ task, teamMembers, onClose, onUpdate, onDelete }:
 
     // Mock Comments
     const [mockComments, setMockComments] = useState<Comment[]>([{ id: 1, text: "تسک ایجاد شد.", user_name: "سیستم", created_at: "شروع" }]);
+
+    // sync description if task changes
+    useEffect(() => { setDescription(task.description || "") }, [task.id]);
 
     const handleDescriptionBlur = () => {
         if (description !== task.description) onUpdate({ description });
@@ -355,7 +440,7 @@ const TaskDetailModal = ({ task, teamMembers, onClose, onUpdate, onDelete }:
                                     value={description}
                                     onChange={(e) => setDescription(e.target.value)}
                                     onBlur={handleDescriptionBlur}
-                                    placeholder="توضیحات تسک..."
+                                    placeholder="توضیحات تسک را اینجا بنویسید..."
                                 />
                             </div>
 
@@ -440,12 +525,8 @@ const TaskDetailModal = ({ task, teamMembers, onClose, onUpdate, onDelete }:
                                             calendar={persian}
                                             locale={persian_fa}
                                             calendarPosition="bottom-right"
-                                            range 
-                                            onChange={(dateObjects) => {
-                                                if (Array.isArray(dateObjects)) {
-                                                    const dateString = dateObjects.map(d => d.toString()).join(' - ');
-                                                    onUpdate({ due_date: dateString });
-                                                }
+                                            onChange={(date) => {
+                                                 if (date) onUpdate({ due_date: date.toString() });
                                             }}
                                             containerStyle={{ width: '100%', height: '100%' }}
                                             style={{ width: '100%', height: '100%', cursor: 'pointer' }}
