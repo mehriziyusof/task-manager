@@ -42,9 +42,20 @@ type Attachment = {
     url: string;
 };
 
-// --- (جدید) تعریف یک دیکشنری برای نگهداری عناوین مراحل ---
-// این کار Join را در کد جاوااسکریپت شبیه‌سازی می‌کند
+// --- (جدید) تعریف نوع داده برای تسک خام بدون جوین ---
+type RawTask = {
+    id: number;
+    title: string;
+    description: string | null;
+    status: 'pending' | 'in_progress' | 'completed';
+    stage_id: number | null; // 🛑 این بار فقط ID مرحله را می‌گیریم
+    assigned_to: string | null; 
+    due_date: string | null;
+};
+
+// --- Cache برای نگهداری عنوان مراحل ---
 let stageTitleCache: Record<number, string> = {}; 
+
 
 export default function ProjectDetails({ params }: { params: { id: string } }) {
     const router = useRouter();
@@ -56,7 +67,7 @@ export default function ProjectDetails({ params }: { params: { id: string } }) {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    // --- MOCK DATA (حذف نشدند) ---
+    // --- MOCK DATA ---
     const [comments, setComments] = useState<Comment[]>([
         { id: 1, text: "به نظر می‌رسد تسک‌های مرحله اول باید زودتر تخصیص داده شوند.", user_name: "مدیر تیم (شما)", created_at: "دیروز، 10:30" },
         { id: 2, text: "مرحله طراحی گرافیکی به تأخیر افتاد. نیاز به پیگیری داریم.", user_name: "پشتیبان", created_at: "امروز، 09:00" },
@@ -83,48 +94,43 @@ export default function ProjectDetails({ params }: { params: { id: string } }) {
             // 1. دریافت جزئیات پروژه 
             const { data: projectData, error: projError } = await supabase
                 .from('projects')
-                .select('*')
+                .select('id, title, description, status, created_at, process_id')
                 .eq('id', projectId)
                 .single();
 
             if (projError || !projectData) throw new Error('پروژه پیدا نشد.');
             setProject(projectData);
 
-            // 1.5. دریافت تمام عناوین مراحل مربوط به این الگو و ذخیره در Cache
-            const { data: stagesData } = await supabase
+            // 2. دریافت تمام مراحل (stages) مرتبط با این الگو (process)
+            const { data: stagesData, error: stagesError } = await supabase
                 .from('stages')
                 .select('id, title')
                 .eq('process_id', projectData.process_id);
             
+            if (stagesError) throw stagesError;
+
+            // 3. Cache کردن عناوین مراحل برای جوین در فرانت‌اند
             if (stagesData) {
                 stagesData.forEach(stage => {
                     stageTitleCache[stage.id] = stage.title;
                 });
             }
 
-
-            // 2. دریافت تسک‌ها: این بار فقط stage_id را می‌گیریم
+            // 4. دریافت تسک‌ها: بدون Join مستقیم!
             const query = supabase
                 .from('project_tasks')
                 .select(`
-                    id, 
-                    title, 
-                    description, 
-                    status, 
-                    assigned_to, 
-                    due_date,
-                    stage_id // 🛑 فقط ID مرحله را می‌گیریم و از Join دوری می‌کنیم
-                `) 
+                    id, title, description, status, assigned_to, due_date,
+                    stage_id 
+                `)
                 .eq('project_id', projectId);
             
-            const { data: tasksData, error: tasksError } = await query as any;
+            const { data: rawTasksData, error: tasksError } = await query as any;
 
             if (tasksError) throw tasksError;
             
-            const rawTasks: any[] = tasksData; 
-
-            // 3. شبیه‌سازی Join در فرانت‌اند با استفاده از Cache
-            const structuredTasks: Task[] = rawTasks.map((task: any) => ({
+            // 5. شبیه‌سازی Join در فرانت‌اند
+            const structuredTasks: Task[] = (rawTasksData as RawTask[]).map((task: RawTask) => ({
                 id: task.id,
                 title: task.title,
                 description: task.description,
@@ -132,15 +138,14 @@ export default function ProjectDetails({ params }: { params: { id: string } }) {
                 assigned_to: task.assigned_to,
                 due_date: task.due_date,
                 // استفاده از Cache برای پیدا کردن عنوان مرحله
-                stage_title: stageTitleCache[task.stage_id] || 'بدون مرحله', 
+                stage_title: task.stage_id ? stageTitleCache[task.stage_id] || 'بدون مرحله' : 'بدون مرحله', 
             }));
 
             setTasks(structuredTasks);
 
         } catch (err: any) {
             console.error("Critical Fetch Data Error:", err);
-            // 🛑 نمایش خطای دریافتی از دیتابیس به کاربر
-            setError(err.message || 'خطا در بارگذاری اطلاعات پروژه. (مشکل احتمالی Policyهای SELECT یا نام ستون stage_id)');
+            setError(err.message || 'خطا در بارگذاری اطلاعات پروژه. (Policyهای SELECT را چک کنید)');
         } finally {
             setLoading(false);
         }
@@ -182,11 +187,9 @@ export default function ProjectDetails({ params }: { params: { id: string } }) {
     };
 
     if (loading) {
-        // تغییر پیام برای رصد بهتر
         return (
             <div className="flex-1 w-full flex items-center justify-center">
                 <div className="w-full glass p-5 rounded-3xl text-white/70 text-center">
-                    {/* پیام لودینگ بهتر */}
                     <p className="animate-pulse">در حال بارگذاری پروژه {isValidId ? projectId : '...'}...</p>
                     <p className='text-xs mt-2'>لطفا Policyهای Supabase را چک کنید اگر طول کشید.</p>
                 </div>
