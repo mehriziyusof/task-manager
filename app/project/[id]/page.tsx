@@ -69,6 +69,7 @@ export default function ProjectDetails({ params }: { params: { id: string } }) {
         if (!projectId) return;
         fetchData();
     }, [projectId]);
+// ... (کدهای قبلی)
 
     const fetchData = async () => {
         setLoading(true);
@@ -86,7 +87,7 @@ export default function ProjectDetails({ params }: { params: { id: string } }) {
             setProject(projectData);
 
             // 2. دریافت تسک‌ها و گروه بندی بر اساس مراحل
-            // ✅ اصلاح اساسی: کوئری را کامل می‌نویسیم و سپس نتیجه را به صورت any دریافت می‌کنیم.
+            // ⚠️ فرض بر این است که نام کلید خارجی در project_tasks، به stages، همان 'stages' است.
             const query = supabase
                 .from('project_tasks')
                 .select(`
@@ -96,11 +97,11 @@ export default function ProjectDetails({ params }: { params: { id: string } }) {
                     status, 
                     assigned_to, 
                     due_date,
-                    stages(title) 
+                    stages(title) // فرض بر stages بودن کلید خارجی است
                 `) 
                 .eq('project_id', projectId);
             
-            // ✅ تبدیل نتیجه به any برای نادیده گرفتن خطاهای نوع پیچیده
+            // 💡 استفاده از Type Assertion بر روی خروجی نهایی
             const { data: tasksData, error: tasksError } = await query as any;
 
             if (tasksError) throw tasksError;
@@ -115,20 +116,21 @@ export default function ProjectDetails({ params }: { params: { id: string } }) {
                 status: task.status,
                 assigned_to: task.assigned_to,
                 due_date: task.due_date,
-                // دسترسی ایمن به عنوان مرحله
-                stage_title: task.stages?.title || 'بدون مرحله', 
+                // دسترسی ایمن به عنوان مرحله: اگر stages نال باشد، از 'بدون مرحله' استفاده می‌شود.
+                stage_title: (task.stages as any)?.title || 'بدون مرحله', 
             }));
 
             setTasks(structuredTasks);
 
         } catch (err: any) {
-            console.error(err);
-            setError(err.message || 'خطا در بارگذاری اطلاعات پروژه.');
+            console.error("Fetch Data Error:", err);
+            setError(err.message || 'خطا در بارگذاری اطلاعات پروژه. احتمالاً خطای کوئری یا اتصال.');
         } finally {
             setLoading(false);
         }
     };
-
+    
+// ... (بقیه کدهای کامپوننت)
     // --- منطق گروه‌بندی تسک‌ها برای نمای کانبان (Grouping by Stage) ---
     const groupedTasks = useMemo(() => {
         if (!tasks.length) return {};
