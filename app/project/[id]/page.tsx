@@ -42,10 +42,12 @@ type Attachment = {
     url: string;
 };
 
+// --- (جدید) تعریف یک دیکشنری برای نگهداری عناوین مراحل ---
+// این کار Join را در کد جاوااسکریپت شبیه‌سازی می‌کند
+let stageTitleCache: Record<number, string> = {}; 
 
 export default function ProjectDetails({ params }: { params: { id: string } }) {
     const router = useRouter();
-    // 🛑 ایمن‌سازی: ID را ابتدا به عنوان یک رشته بررسی می‌کنیم
     const projectId = parseInt(params.id);
     const isValidId = !isNaN(projectId);
 
@@ -54,19 +56,19 @@ export default function ProjectDetails({ params }: { params: { id: string } }) {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    // --- MOCK DATA برای UI جدید (در فاز بعدی با Supabase ادغام می‌شوند) ---
+    // --- MOCK DATA (حذف نشدند) ---
     const [comments, setComments] = useState<Comment[]>([
         { id: 1, text: "به نظر می‌رسد تسک‌های مرحله اول باید زودتر تخصیص داده شوند.", user_name: "مدیر تیم (شما)", created_at: "دیروز، 10:30" },
         { id: 2, text: "مرحله طراحی گرافیکی به تأخیر افتاد. نیاز به پیگیری داریم.", user_name: "پشتیبان", created_at: "امروز، 09:00" },
     ]);
-    const [attachments, setAttachments] = useState<Attachment[]>([
+    const [attachments] = useState<Attachment[]>([
         { id: 1, name: "برندبوک_2025.pdf", size: "3.5 MB", type: 'pdf', url: '#' },
         { id: 2, name: "طرح_اولیه_UI.jpg", size: "1.2 MB", type: 'jpg', url: '#' },
     ]);
     const [newCommentText, setNewCommentText] = useState('');
     // --- پایان MOCK DATA ---
     
-    // 🛑 تابع fetchData به یک useCallback تبدیل شد تا خطای زنجیره‌سازی در useEffect ندهد
+    // 🛑 تابع fetchData اصلاح شده برای حذف کوئری Join
     const fetchData = useCallback(async () => {
         if (!isValidId) {
             setLoading(false);
@@ -78,7 +80,7 @@ export default function ProjectDetails({ params }: { params: { id: string } }) {
         setError(null);
         
         try {
-            // 1. دریافت جزئیات پروژه (این کوئری درست کار می‌کند)
+            // 1. دریافت جزئیات پروژه 
             const { data: projectData, error: projError } = await supabase
                 .from('projects')
                 .select('*')
@@ -88,7 +90,20 @@ export default function ProjectDetails({ params }: { params: { id: string } }) {
             if (projError || !projectData) throw new Error('پروژه پیدا نشد.');
             setProject(projectData);
 
-            // 2. دریافت تسک‌ها و مراحل مرتبط
+            // 1.5. دریافت تمام عناوین مراحل مربوط به این الگو و ذخیره در Cache
+            const { data: stagesData } = await supabase
+                .from('stages')
+                .select('id, title')
+                .eq('process_id', projectData.process_id);
+            
+            if (stagesData) {
+                stagesData.forEach(stage => {
+                    stageTitleCache[stage.id] = stage.title;
+                });
+            }
+
+
+            // 2. دریافت تسک‌ها: این بار فقط stage_id را می‌گیریم
             const query = supabase
                 .from('project_tasks')
                 .select(`
@@ -98,17 +113,17 @@ export default function ProjectDetails({ params }: { params: { id: string } }) {
                     status, 
                     assigned_to, 
                     due_date,
-                    stages(title) 
+                    stage_id // 🛑 فقط ID مرحله را می‌گیریم و از Join دوری می‌کنیم
                 `) 
                 .eq('project_id', projectId);
             
-            // 💡 Type Assertion بر روی خروجی نهایی
             const { data: tasksData, error: tasksError } = await query as any;
 
             if (tasksError) throw tasksError;
             
             const rawTasks: any[] = tasksData; 
 
+            // 3. شبیه‌سازی Join در فرانت‌اند با استفاده از Cache
             const structuredTasks: Task[] = rawTasks.map((task: any) => ({
                 id: task.id,
                 title: task.title,
@@ -116,7 +131,8 @@ export default function ProjectDetails({ params }: { params: { id: string } }) {
                 status: task.status,
                 assigned_to: task.assigned_to,
                 due_date: task.due_date,
-                stage_title: task.stages?.title || 'بدون مرحله', 
+                // استفاده از Cache برای پیدا کردن عنوان مرحله
+                stage_title: stageTitleCache[task.stage_id] || 'بدون مرحله', 
             }));
 
             setTasks(structuredTasks);
@@ -124,19 +140,18 @@ export default function ProjectDetails({ params }: { params: { id: string } }) {
         } catch (err: any) {
             console.error("Critical Fetch Data Error:", err);
             // 🛑 نمایش خطای دریافتی از دیتابیس به کاربر
-            setError(err.message || 'خطا در بارگذاری اطلاعات پروژه. Policyها یا اتصال را چک کنید.');
+            setError(err.message || 'خطا در بارگذاری اطلاعات پروژه. (مشکل احتمالی Policyهای SELECT یا نام ستون stage_id)');
         } finally {
             setLoading(false);
         }
-    }, [projectId, isValidId]); // وابستگی به projectId و isValidId
+    }, [projectId, isValidId]); 
 
 
     useEffect(() => {
-        // اجرای fetchData فقط یکبار پس از mount
         if (isValidId) {
              fetchData();
         }
-    }, [fetchData, isValidId]); // وابسته به fetchData
+    }, [fetchData, isValidId]); 
 
     // --- منطق گروه‌بندی تسک‌ها برای نمای کانبان (Grouping by Stage) ---
     const groupedTasks = useMemo(() => {
@@ -184,7 +199,7 @@ export default function ProjectDetails({ params }: { params: { id: string } }) {
             <div className="p-8 text-red-400 font-bold glass rounded-3xl border border-red-500/50">
                 <p className='text-xl'>❌ خطا در بارگذاری اطلاعات</p>
                 <p className='text-sm mt-3 border-t border-white/20 pt-3'>جزئیات خطا: {error}</p>
-                <p className='text-xs mt-2 text-white/60'>(اگر خطای Policy است، در Supabase Policyهای SELECT را برای جداول projects/project_tasks/stages چک کنید.)</p>
+                <p className='text-xs mt-2 text-white/60'>(اگر خطای Policy است، Policyهای SELECT را برای جداول projects/project_tasks/stages چک کنید.)</p>
             </div>
         );
     }
