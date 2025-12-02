@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { FiPlus, FiTrash2, FiActivity, FiFolder, FiLoader } from 'react-icons/fi';
 
-// نوع داده پروژه برای نمایش در داشبورد
+// نوع داده پروژه
 type ProjectWithStats = {
   id: number;
   title: string;
@@ -17,7 +17,7 @@ type ProjectWithStats = {
 export default function Dashboard() {
   const [projects, setProjects] = useState<ProjectWithStats[]>([]);
   const [loading, setLoading] = useState(true);
-  const [creating, setCreating] = useState(false); // لودینگ ساخت پروژه
+  const [creating, setCreating] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [showModal, setShowModal] = useState(false);
   const router = useRouter();
@@ -30,7 +30,7 @@ export default function Dashboard() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { router.push('/login'); return; }
 
-    // دریافت پروژه‌ها به همراه وضعیت تسک‌ها
+    // دریافت لیست پروژه‌ها
     const { data: projData, error } = await supabase
       .from('projects')
       .select(`
@@ -47,25 +47,23 @@ export default function Dashboard() {
     setLoading(false);
   };
 
-  // --- هندلر ایجاد پروژه جدید (Trello Style) ---
+  // --- هندلر ایجاد پروژه جدید (Fix شده) ---
   const handleCreateProject = async () => {
     if (!newProjectName.trim()) return;
     setCreating(true);
 
     try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) throw new Error("کاربر یافت نشد");
-
-        // 1. ساخت یک 'Process' اختصاصی برای این پروژه (تا هر پروژه مراحل خود را داشته باشد)
+        // 1. ساخت فرآیند (Process)
+        // نکته: طبق عکس ارور شما، دیتابیس روی جدول processes حساس بود که با SQL جدید حل شد.
         const { data: proc, error: procError } = await supabase
             .from('processes')
-            .insert({ title: newProjectName }) // عنوان فرآیند همان عنوان پروژه
+            .insert({ title: newProjectName })
             .select()
             .single();
 
-        if (procError) throw procError;
+        if (procError) throw new Error(`خطا در ساخت پروسه: ${procError.message}`);
         
-        // 2. ساخت پروژه و اتصال به Process جدید
+        // 2. ساخت پروژه
         const { data: newProj, error: projError } = await supabase
             .from('projects')
             .insert({ 
@@ -76,9 +74,9 @@ export default function Dashboard() {
             .select()
             .single();
 
-        if (projError) throw projError;
+        if (projError) throw new Error(`خطا در ساخت پروژه: ${projError.message}`);
 
-        // 3. ساخت مراحل پیش‌فرض (Default Stages) برای این پروژه
+        // 3. ساخت مراحل پیش‌فرض (Stages)
         const defaultStages = [
             { process_id: proc.id, title: 'برای انجام (To Do)', order_index: 1 },
             { process_id: proc.id, title: 'در حال انجام (Doing)', order_index: 2 },
@@ -86,17 +84,16 @@ export default function Dashboard() {
         ];
         
         const { error: stagesError } = await supabase.from('stages').insert(defaultStages);
-        if (stagesError) throw stagesError;
+        if (stagesError) throw new Error(`خطا در ساخت مراحل: ${stagesError.message}`);
 
         // موفقیت
         setShowModal(false);
         setNewProjectName('');
-        // رفرش لیست یا هدایت به پروژه
-        fetchData(); 
-        // router.push(`/project/${newProj.id}`); // اگر می‌خواهید مستقیم وارد پروژه شود این را فعال کنید
+        fetchData(); // رفرش لیست پروژه‌ها
 
     } catch (error: any) {
-        alert("خطا در ساخت پروژه: " + error.message);
+        alert(error.message);
+        console.error(error);
     } finally {
         setCreating(false);
     }
@@ -104,17 +101,16 @@ export default function Dashboard() {
 
   // --- هندلر حذف پروژه ---
   const handleDeleteProject = async (e: React.MouseEvent, id: number) => {
-    e.stopPropagation(); // جلوگیری از کلیک شدن روی کارت و باز شدن پروژه
-    if (!confirm("آیا از حذف این پروژه و تمام اطلاعات آن مطمئن هستید؟")) return;
+    e.stopPropagation(); 
+    if (!confirm("آیا از حذف این پروژه مطمئن هستید؟")) return;
 
-    // حذف از دیتابیس
+    // حذف از دیتابیس (به دلیل Cascade در دیتابیس، تسک‌ها هم پاک می‌شوند)
     const { error } = await supabase.from('projects').delete().eq('id', id);
 
     if (!error) {
-        // حذف از استیت (UI)
         setProjects(projects.filter(p => p.id !== id));
     } else {
-        alert("خطا در حذف: " + error.message);
+        alert("خطا در حذف پروژه: " + error.message);
     }
   };
 
@@ -128,7 +124,10 @@ export default function Dashboard() {
   if (loading) {
       return (
         <div className="flex w-full h-screen items-center justify-center text-white/50">
-            <FiLoader className="animate-spin text-3xl" />
+            <div className="flex flex-col items-center gap-4">
+                <FiLoader className="animate-spin text-4xl text-blue-500" />
+                <p>در حال بارگذاری میز کار...</p>
+            </div>
         </div>
       );
   }
@@ -136,7 +135,7 @@ export default function Dashboard() {
   return (
     <div className="p-8 text-white min-h-screen">
       
-      {/* هدر و دکمه ایجاد */}
+      {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-center mb-10 gap-4">
         <div>
             <h1 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400">
@@ -152,9 +151,10 @@ export default function Dashboard() {
         </button>
       </div>
 
-      {/* لیست پروژه‌ها */}
+      {/* Projects Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {/* دکمه بزرگ ایجاد پروژه (Card Style) */}
+        
+        {/* دکمه بزرگ ایجاد پروژه */}
         <button 
             onClick={() => setShowModal(true)}
             className="border-2 border-dashed border-white/10 rounded-[2rem] flex flex-col items-center justify-center text-white/30 hover:text-white/60 hover:border-white/20 hover:bg-white/5 transition min-h-[200px] gap-4 group"
@@ -175,7 +175,7 @@ export default function Dashboard() {
               onClick={() => router.push(`/project/${project.id}`)}
               className="glass glass-hover p-6 rounded-[2rem] border border-white/5 cursor-pointer relative group overflow-hidden"
             >
-                {/* گرادینت پس‌زمینه محو */}
+                {/* افکت پس‌زمینه */}
                 <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 blur-[50px] rounded-full -mr-10 -mt-10 pointer-events-none" />
 
                 {/* هدر کارت */}
@@ -183,7 +183,7 @@ export default function Dashboard() {
                     <div className="p-3 rounded-2xl bg-white/5 border border-white/5 text-blue-400 shadow-inner">
                         <FiFolder size={24} />
                     </div>
-                    {/* دکمه حذف پروژه */}
+                    {/* دکمه حذف */}
                     <button 
                         onClick={(e) => handleDeleteProject(e, project.id)}
                         className="p-2 rounded-xl hover:bg-red-500/20 text-white/20 hover:text-red-400 transition z-20"
@@ -193,13 +193,13 @@ export default function Dashboard() {
                     </button>
                 </div>
 
-                {/* عنوان و تاریخ */}
+                {/* اطلاعات */}
                 <div className="mb-6 relative z-10">
                     <h3 className="text-xl font-bold text-white mb-1 truncate">{project.title}</h3>
                     <p className="text-xs text-white/40">{new Date(project.created_at).toLocaleDateString('fa-IR')}</p>
                 </div>
 
-                {/* نوار پیشرفت */}
+                {/* پروگرس بار */}
                 <div className="space-y-2 relative z-10">
                     <div className="flex justify-between text-xs text-white/60">
                         <span>پیشرفت</span>
@@ -213,7 +213,7 @@ export default function Dashboard() {
                     </div>
                 </div>
 
-                {/* فوتر کارت */}
+                {/* فوتر */}
                 <div className="mt-6 pt-4 border-t border-white/5 flex items-center gap-2 text-xs text-white/50 relative z-10">
                     <FiActivity />
                     <span>{project.project_tasks?.length || 0} تسک فعال</span>
