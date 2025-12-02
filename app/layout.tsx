@@ -15,7 +15,7 @@ export default function RootLayout({
   return (
     <html lang="fa" dir="rtl">
       <head>
-        {/* بارگذاری فونت وزیر برای جلوگیری از خطای بیلد و نمایش صحیح متون فارسی */}
+        {/* بارگذاری فونت وزیر */}
         <link 
           href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css" 
           rel="stylesheet" 
@@ -49,9 +49,7 @@ export default function RootLayout({
                 <nav className="space-y-3">
                   <SidebarLink href="/" icon="🏠" label="میز کار من" />
                   <SidebarLink href="/team" icon="👥" label="اعضای تیم" />
-                  {/* ✅ لینک جدید تقویم */}
                   <SidebarLink href="/calendar" icon="📅" label="تقویم" />
-                  {/* ✅ تغییر تنظیمات به پروفایل */}
                   <SidebarLink href="/profile" icon="👤" label="پروفایل من" />
                 </nav>
               </div>
@@ -88,21 +86,14 @@ export default function RootLayout({
 }
 
 // کامپوننت کمکی برای لینک‌های منو
-function SidebarLink({ href, icon, label, active = false }: { href: string; icon: string; label: string; active?: boolean }) {
+function SidebarLink({ href, icon, label }: { href: string; icon: string; label: string }) {
   return (
     <Link 
       href={href} 
-      className={`flex items-center gap-4 p-3.5 rounded-2xl transition-all duration-200 group ${
-        active 
-          ? "bg-white/10 text-white border border-white/10 shadow-lg" 
-          : "text-white/70 hover:bg-white/5 hover:text-white"
-      }`}
+      className="flex items-center gap-4 p-3.5 rounded-2xl transition-all duration-200 group text-white/70 hover:bg-white/10 hover:text-white border border-transparent hover:border-white/5"
     >
-      <span className={`text-xl transition-transform duration-300 ${!active && "group-hover:scale-110"}`}>{icon}</span>
+      <span className="text-xl group-hover:scale-110 transition-transform">{icon}</span>
       <span className="font-medium text-sm">{label}</span>
-      
-      {/* نشانگر فعال بودن (اختیاری) */}
-      {active && <div className="mr-auto w-1.5 h-1.5 rounded-full bg-blue-400 shadow-[0_0_10px_rgba(96,165,250,0.8)]" />}
     </Link>
   );
 }

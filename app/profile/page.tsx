@@ -35,6 +35,7 @@ export default function ProfilePage() {
         .eq('id', user.id)
         .single();
       
+      // ترکیب اطلاعات دیتابیس با ایمیل اکانت
       if (data) setProfile({ ...data, email: user.email! });
     }
     setLoading(false);
@@ -53,16 +54,18 @@ export default function ProfilePage() {
       setProfile({ ...profile, ...updates });
       alert("پروفایل با موفقیت به‌روزرسانی شد! ✅");
     } else {
-      alert("خطا در ذخیره تغییرات.");
+      console.error(error);
+      alert("خطا در ذخیره تغییرات. (مطمئن شوید ستون‌ها در دیتابیس وجود دارند)");
     }
     setSaving(false);
   };
 
-  // هندلر آپلود عکس (Mock - در فاز بعد به Storage وصل می‌شود)
+  // هندلر آپلود عکس (Mock - نمایش موقت)
   const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
         const file = e.target.files[0];
-        const fakeUrl = URL.createObjectURL(file); // نمایش موقت
+        const fakeUrl = URL.createObjectURL(file); 
+        // در فاز بعد: آپلود به Supabase Storage و دریافت لینک واقعی
         updateProfile({ avatar_url: fakeUrl });
     }
   };
@@ -77,18 +80,16 @@ export default function ProfilePage() {
 
   return (
     <div className="p-6 md:p-10 text-white min-h-screen flex justify-center">
-      
       <div className="w-full max-w-2xl space-y-8">
         
-        {/* Profile Card */}
+        {/* کارت پروفایل شیشه‌ای */}
         <div className="glass p-8 rounded-[40px] border border-white/10 relative overflow-hidden">
-          
-          {/* Background Blur Effect */}
+          {/* افکت نوری پس‌زمینه */}
           <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-r from-blue-600/20 to-purple-600/20 blur-3xl"></div>
 
           <div className="relative z-10 flex flex-col items-center">
             
-            {/* Avatar */}
+            {/* آواتار با قابلیت تغییر */}
             <div className="relative group cursor-pointer" onClick={() => fileInputRef.current?.click()}>
               <div className="w-32 h-32 rounded-full border-4 border-white/10 overflow-hidden shadow-2xl bg-[#1a1a2e]">
                 {profile.avatar_url ? (
@@ -99,14 +100,14 @@ export default function ProfilePage() {
                     </div>
                 )}
               </div>
-              {/* Edit Overlay */}
-              <div className="absolute inset-0 rounded-full bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition duration-300">
+              {/* لایه هاور برای دوربین */}
+              <div className="absolute inset-0 rounded-full bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition duration-300 backdrop-blur-sm">
                 <FiCamera size={24} className="text-white" />
               </div>
               <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleAvatarUpload} />
             </div>
 
-            {/* Name & Role */}
+            {/* نام و نقش */}
             <div className="mt-4 text-center">
                 <h2 className="text-2xl font-bold text-white">{profile.full_name || "کاربر بدون نام"}</h2>
                 <span className="text-sm text-blue-300 bg-blue-500/10 px-3 py-1 rounded-full mt-2 inline-block border border-blue-500/20">
@@ -114,13 +115,13 @@ export default function ProfilePage() {
                 </span>
             </div>
 
-            {/* Stats / Quick Info */}
-            <div className="flex gap-6 mt-6 text-sm text-white/60">
-                <div className="flex items-center gap-2"><FiMail /> {profile.email}</div>
-                {profile.location && <div className="flex items-center gap-2"><FiMapPin /> {profile.location}</div>}
+            {/* اطلاعات تماس */}
+            <div className="flex flex-wrap justify-center gap-4 mt-6 text-sm text-white/60">
+                <div className="flex items-center gap-2 bg-white/5 px-3 py-1 rounded-lg"><FiMail /> {profile.email}</div>
+                {profile.location && <div className="flex items-center gap-2 bg-white/5 px-3 py-1 rounded-lg"><FiMapPin /> {profile.location}</div>}
             </div>
 
-            {/* Action Buttons */}
+            {/* دکمه‌های عملیاتی */}
             <div className="flex gap-4 mt-8 w-full max-w-md">
                 <button className="flex-1 bg-white/10 hover:bg-white/20 text-white py-3 rounded-2xl transition font-medium border border-white/5">
                     پیام‌ها
@@ -132,11 +133,10 @@ export default function ProfilePage() {
                     <FiLogOut /> خروج
                 </button>
             </div>
-
           </div>
         </div>
 
-        {/* Edit Details Form */}
+        {/* فرم ویرایش اطلاعات */}
         <div className="glass p-8 rounded-3xl border border-white/10">
             <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
                 <FiUser className="text-purple-400" /> ویرایش اطلاعات
@@ -156,11 +156,11 @@ export default function ProfilePage() {
                     <div className="space-y-2">
                         <label className="text-xs text-white/50 mr-2">وب‌سایت</label>
                         <div className="relative">
-                            <FiLink className="absolute right-4 top-3.5 text-white/30" />
+                            <FiLink className="absolute left-4 top-3.5 text-white/30" />
                             <input 
                                 value={profile.website || ''}
                                 onChange={(e) => setProfile({ ...profile, website: e.target.value })}
-                                className="w-full bg-white/5 border border-white/10 rounded-xl pr-10 pl-4 py-3 text-sm focus:outline-none focus:border-purple-500/50 transition text-white"
+                                className="w-full bg-white/5 border border-white/10 rounded-xl pl-10 pr-4 py-3 text-sm focus:outline-none focus:border-purple-500/50 transition text-white text-left ltr"
                                 placeholder="https://..."
                             />
                         </div>

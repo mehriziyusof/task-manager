@@ -86,3 +86,36 @@ body::before {
 * {
   -webkit-tap-highlight-color: transparent;
 }
+/* --- استایل‌های تقویم بزرگ --- */
+.custom-calendar-large .rmdp-day, 
+.custom-calendar-large .rmdp-week-day {
+    width: 100px !important;   /* عرض سلول‌ها */
+    height: 100px !important;  /* ارتفاع سلول‌ها */
+    margin: 4px !important;
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+}
+
+.custom-calendar-large .rmdp-day:hover {
+    background-color: rgba(255, 255, 255, 0.1) !important;
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+/* حذف دایره آبی پیش‌فرض روی عدد روز */
+.custom-calendar-large .rmdp-day.rmdp-selected span:not(.highlight) {
+    background-color: transparent !important;
+    color: #60a5fa !important; /* رنگ آبی روشن برای روز انتخاب شده */
+}
+
+.custom-calendar-large .rmdp-arrow-container:hover {
+    background-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+.rmdp-header-values {
+    font-size: 1.5rem !important;
+    color: white !important;
+    margin-bottom: 20px;
+}
