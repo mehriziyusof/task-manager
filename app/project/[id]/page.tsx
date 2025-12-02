@@ -8,7 +8,7 @@ import {
   FiUsers, FiClock, FiPlus, FiX, FiCheckSquare, FiActivity, FiChevronDown, FiCalendar, FiTrash2
 } from 'react-icons/fi';
 
-// تقویم شمسی
+// تقویم شمسی (Range Picker)
 import DatePicker, { DateObject } from "react-multi-date-picker";
 import persian from "react-date-object/calendars/persian";
 import persian_fa from "react-date-object/locales/persian_fa";
@@ -16,16 +16,13 @@ import persian_fa from "react-date-object/locales/persian_fa";
 // --- Types ---
 type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'blocked';
 
-// ساختار پروفایل کاربر (از جدول profiles)
+// پروفایل کاربر برای لیست اعضا
 type UserProfile = {
     id: string;
     email: string;
+    full_name?: string; 
     role: string;
 };
-
-type ChecklistItem = { id: number; title: string; is_checked: boolean };
-type AttachmentItem = { name: string; url: string; type: string };
-type Comment = { id: number; text: string; user_name: string; created_at: string; };
 
 type Task = {
     id: number;
@@ -35,56 +32,48 @@ type Task = {
     stage_title: string;
     stage_id: number | null;
     assigned_to: string | null; // UUID کاربر
-    assigned_user_email?: string; // برای نمایش در UI
-    due_date: string | null;
-    checklist?: ChecklistItem[];
-    attachments?: AttachmentItem[];
+    assigned_user_email?: string; // ایمیل کاربر برای نمایش
+    due_date: string | null; // بازه زمانی به صورت رشته
+    checklist?: { id: number; title: string; is_checked: boolean }[];
+    attachments?: { name: string; url: string; type: string }[];
 };
 
-type Project = { 
-    id: number; 
-    title: string; 
-    created_at: string; 
-    process_id: number; 
-    status: string; 
-};
+type Project = { id: number; title: string; created_at: string; process_id: number; status: string; };
+type Comment = { id: number; text: string; user_name: string; created_at: string; };
 
-// کش برای نگهداری عناوین مراحل جهت جلوگیری از کوئری‌های تکراری
 let stageTitleCache: Record<number, string> = {}; 
 
 export default function ProjectDetails() {
     const params = useParams();
-    // مدیریت امن ID برای جلوگیری از خطای NaN
     const projectIdString = Array.isArray(params?.id) ? params.id[0] : params?.id;
     const projectId = projectIdString ? parseInt(projectIdString) : NaN;
     const isValidId = !isNaN(projectId);
 
     const [project, setProject] = useState<Project | null>(null);
     const [tasks, setTasks] = useState<Task[]>([]);
-    const [teamMembers, setTeamMembers] = useState<UserProfile[]>([]); // لیست اعضای واقعی
+    const [teamMembers, setTeamMembers] = useState<UserProfile[]>([]); // لیست اعضا
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [selectedTask, setSelectedTask] = useState<Task | null>(null);
 
-    // دریافت داده‌ها از Supabase
+    // دریافت داده‌ها
     const fetchData = useCallback(async () => {
         if (!isValidId) return;
         setLoading(true);
-        setError(null);
         try {
-            // 1. دریافت پروژه
+            // 1. پروژه
             const { data: projectData, error: projError } = await supabase
                 .from('projects').select('*').eq('id', projectId).single();
             if (projError || !projectData) throw new Error('پروژه پیدا نشد.');
             setProject(projectData);
 
-            // 2. دریافت مراحل (Stages)
+            // 2. مراحل
             const { data: stagesData } = await supabase
                 .from('stages').select('id, title').eq('process_id', projectData.process_id);
             if (stagesData) stagesData.forEach(s => stageTitleCache[s.id] = s.title);
 
-            // 3. دریافت لیست اعضای تیم (Profiles)
-            const { data: profiles } = await supabase.from('profiles').select('id, email, role');
+            // 3. دریافت لیست اعضای تیم (واقعی)
+            const { data: profiles } = await supabase.from('profiles').select('id, email, full_name, role');
             if (profiles) setTeamMembers(profiles);
 
             // 4. دریافت تسک‌ها
@@ -92,9 +81,7 @@ export default function ProjectDetails() {
                 .from('project_tasks').select('*').eq('project_id', projectId);
             if (taskError) throw taskError;
 
-            // ترکیب داده‌ها
             const finalTasks: Task[] = (rawTasks || []).map((t: any) => {
-                // پیدا کردن ایمیل کاربر تخصیص یافته
                 const assignedUser = profiles?.find(p => p.id === t.assigned_to);
                 return {
                     id: t.id,
@@ -102,16 +89,15 @@ export default function ProjectDetails() {
                     description: t.description,
                     status: t.status,
                     assigned_to: t.assigned_to,
-                    assigned_user_email: assignedUser ? assignedUser.email : null,
+                    assigned_user_email: assignedUser ? (assignedUser.full_name || assignedUser.email) : null,
                     due_date: t.due_date,
                     stage_id: t.stage_id,
                     stage_title: t.stage_id ? (stageTitleCache[t.stage_id] || 'سایر') : 'بدون مرحله',
-                    checklist: [], // فعلاً خالی (در صورت نیاز از جدول جداگانه لود می‌شود)
-                    attachments: []
+                    checklist: [], // فعلاً خالی (در فاز بعد از جدول جداگانه لود می‌شود)
+                    attachments: [] 
                 };
             });
             setTasks(finalTasks);
-
         } catch (err: any) {
             console.error("Fetch Error:", err);
             setError(err.message || "خطا در دریافت اطلاعات.");
@@ -122,51 +108,46 @@ export default function ProjectDetails() {
 
     useEffect(() => { if (isValidId) fetchData(); }, [isValidId, fetchData]);
 
-    // --- هندلر آپدیت تسک ---
+    // هندلر آپدیت تسک
     const updateTask = async (taskId: number, updates: Partial<Task>) => {
-        // 1. آپدیت لوکال (UI Optimistic Update)
+        // آپدیت لوکال
         setTasks(prev => prev.map(t => {
             if (t.id !== taskId) return t;
             
-            // اگر کاربر تخصیص یافته تغییر کرد، ایمیل نمایشی را هم آپدیت کن
-            let newEmail = t.assigned_user_email;
+            // اگر کاربر تخصیص یافته تغییر کرد، نام نمایشی را آپدیت کن
+            let newUserEmail = t.assigned_user_email;
             if (updates.assigned_to) {
                 const user = teamMembers.find(m => m.id === updates.assigned_to);
-                newEmail = user?.email;
+                newUserEmail = user?.full_name || user?.email;
             }
-            return { ...t, ...updates, assigned_user_email: newEmail };
+            return { ...t, ...updates, assigned_user_email: newUserEmail };
         }));
 
-        // اگر مودال باز است، آن را هم آپدیت کن
         if (selectedTask?.id === taskId) {
             setSelectedTask(prev => {
                 if (!prev) return null;
-                let newEmail = prev.assigned_user_email;
+                let newUserEmail = prev.assigned_user_email;
                 if (updates.assigned_to) {
                     const user = teamMembers.find(m => m.id === updates.assigned_to);
-                    newEmail = user?.email;
+                    newUserEmail = user?.full_name || user?.email;
                 }
-                return { ...prev, ...updates, assigned_user_email: newEmail };
+                return { ...prev, ...updates, assigned_user_email: newUserEmail };
             });
         }
 
-        // 2. آپدیت در Supabase
+        // آپدیت دیتابیس
         try {
-            // حذف فیلدهای اضافی که در جدول project_tasks وجود ندارند
             const { checklist, attachments, stage_title, assigned_user_email, ...dbUpdates } = updates as any;
-            
             if (Object.keys(dbUpdates).length > 0) {
                 await supabase.from('project_tasks').update(dbUpdates).eq('id', taskId);
             }
         } catch (err) {
-            console.error("Error updating task in DB:", err);
+            console.error("Error updating task:", err);
         }
     };
 
-    // --- هندلر حذف تسک ---
     const handleDeleteTask = async (taskId: number) => {
         if (!confirm("آیا از حذف این تسک مطمئن هستید؟")) return;
-        
         setTasks(prev => prev.filter(t => t.id !== taskId));
         setSelectedTask(null);
         await supabase.from('project_tasks').delete().eq('id', taskId);
@@ -176,7 +157,6 @@ export default function ProjectDetails() {
     if (error) return <ErrorState message={error} />;
     if (!project) return null;
 
-    // گروه‌بندی تسک‌ها برای نمایش کانبان
     const groupedTasks = tasks.reduce((acc, task) => {
         const key = task.stage_title;
         if (!acc[key]) acc[key] = [];
@@ -229,14 +209,11 @@ export default function ProjectDetails() {
                                         <div className="flex justify-between items-start mb-2">
                                             <h4 className="font-medium text-sm text-white group-hover:text-blue-200">{task.title}</h4>
                                         </div>
-                                        
-                                        {/* نمایش خلاصه وضعیت */}
                                         <div className="flex justify-between items-center mt-3">
                                             <StatusBadge status={task.status} />
                                             <div className="flex items-center gap-2">
-                                                {/* آواتار کوچک */}
                                                 {task.assigned_user_email && (
-                                                    <div className="w-5 h-5 rounded-full bg-blue-500 flex items-center justify-center text-[8px] text-white font-bold" title={task.assigned_user_email}>
+                                                    <div className="w-5 h-5 rounded-full bg-blue-500 flex items-center justify-center text-[9px] text-white font-bold" title={task.assigned_user_email}>
                                                         {task.assigned_user_email.charAt(0).toUpperCase()}
                                                     </div>
                                                 )}
@@ -254,7 +231,7 @@ export default function ProjectDetails() {
                 ))}
             </div>
 
-            {/* --- MODAL: Task Details --- */}
+            {/* Modal */}
             {selectedTask && (
                 <TaskDetailModal 
                     task={selectedTask} 
@@ -268,8 +245,7 @@ export default function ProjectDetails() {
     );
 }
 
-// --- Helper Components ---
-
+// --- Components ---
 const LoadingState = () => (
     <div className="flex w-full h-[80vh] items-center justify-center text-white/70">
         <div className="text-center space-y-4">
@@ -302,23 +278,22 @@ const StatusBadge = ({ status }: { status: TaskStatus }) => {
     return <span className={`text-[10px] px-2 py-0.5 rounded-md ${color}`}>{label}</span>;
 };
 
-// --- MODAL Component ---
+// --- Task Modal (Final Fixes) ---
 const TaskDetailModal = ({ task, teamMembers, onClose, onUpdate, onDelete }: 
     { task: Task; teamMembers: UserProfile[]; onClose: () => void; onUpdate: (u: Partial<Task>) => void; onDelete: () => void }) => {
     
     const [description, setDescription] = useState(task.description || "");
     const [newChecklistTitle, setNewChecklistTitle] = useState("");
     const [commentText, setCommentText] = useState('');
-    const [mockComments, setMockComments] = useState<Comment[]>([{ id: 1, text: "تسک ایجاد شد.", user_name: "سیستم", created_at: "شروع" }]);
     const [showUsers, setShowUsers] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    // هندلر توضیحات (ذخیره هنگام خروج)
+    // ذخیره توضیحات
     const handleDescriptionBlur = () => {
         if (description !== task.description) onUpdate({ description });
     };
 
-    // هندلر چک‌لیست (Local Only)
+    // افزودن آیتم چک‌لیست (لوکال)
     const handleAddChecklist = () => {
         if (!newChecklistTitle.trim()) return;
         const newItem = { id: Date.now(), title: newChecklistTitle, is_checked: false };
@@ -334,7 +309,7 @@ const TaskDetailModal = ({ task, teamMembers, onClose, onUpdate, onDelete }:
         onUpdate({ checklist: newChecklist });
     };
 
-    // هندلر فایل (Local Mock)
+    // آپلود فایل (Mock)
     const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!e.target.files || e.target.files.length === 0) return;
         const file = e.target.files[0];
@@ -342,28 +317,20 @@ const TaskDetailModal = ({ task, teamMembers, onClose, onUpdate, onDelete }:
         const newAttachment = { name: file.name, url: '#', type };
         const newAttachments = [...(task.attachments || []), newAttachment];
         onUpdate({ attachments: newAttachments });
-        alert("فایل به لیست اضافه شد (آپلود واقعی نیاز به Storage دارد)");
-    };
-
-    // هندلر کامنت (Local Mock)
-    const handleSendComment = () => {
-        if(!commentText.trim()) return;
-        setMockComments([...mockComments, { id: Date.now(), text: commentText, user_name: "شما", created_at: "الان" }]);
-        setCommentText('');
+        alert("فایل به لیست اضافه شد (نیاز به Storage دارد)");
     };
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xl animate-fade-in" onClick={onClose}>
-            <div 
-                className="glass w-full max-w-4xl max-h-[85vh] overflow-y-auto rounded-3xl border border-white/10 shadow-2xl relative animate-scale-up custom-scrollbar"
-                onClick={(e) => e.stopPropagation()}
-            >
+            <div className="glass w-full max-w-4xl max-h-[85vh] overflow-y-auto rounded-3xl border border-white/10 shadow-2xl relative animate-scale-up custom-scrollbar" onClick={(e) => e.stopPropagation()}>
+                
                 {/* Header Banner */}
                 <div className="h-24 bg-gradient-to-r from-blue-900/40 to-purple-900/40 w-full relative">
                     <button onClick={onClose} className="absolute top-4 right-4 bg-black/40 hover:bg-red-500/80 text-white p-2 rounded-full transition backdrop-blur-md z-20"><FiX size={20} /></button>
                 </div>
 
                 <div className="p-6 md:p-10 space-y-8 -mt-10 relative z-10">
+                    
                     {/* Title & Status */}
                     <div className="space-y-2">
                         <div className="flex gap-2 items-center">
@@ -387,10 +354,8 @@ const TaskDetailModal = ({ task, teamMembers, onClose, onUpdate, onDelete }:
                     </div>
 
                     <div className="flex flex-col md:flex-row gap-10">
-                        {/* Left Column */}
+                        {/* Main Content */}
                         <div className="flex-1 space-y-6">
-                            
-                            {/* Description */}
                             <div className="space-y-2">
                                 <h3 className="text-lg font-bold text-white/90 flex items-center gap-2"><FiFileText/> توضیحات</h3>
                                 <textarea 
@@ -425,7 +390,7 @@ const TaskDetailModal = ({ task, teamMembers, onClose, onUpdate, onDelete }:
                                     <h3 className="text-lg font-bold text-white/90 flex items-center gap-2"><FiDownload /> فایل‌ها</h3>
                                     <div className="grid grid-cols-2 gap-2">
                                         {task.attachments.map((file, idx) => (
-                                            <div key={idx} className="bg-white/5 p-3 rounded-xl border border-white/10 flex items-center gap-3">
+                                            <div key={idx} className="bg-white/5 p-3 rounded-xl border border-white/10 flex items-center gap-3 hover:bg-white/10 transition cursor-pointer">
                                                 <div className="bg-blue-500/20 p-2 rounded-lg text-blue-300"><FiFileText /></div>
                                                 <div className="truncate text-sm text-white/80">{file.name}</div>
                                             </div>
@@ -433,29 +398,12 @@ const TaskDetailModal = ({ task, teamMembers, onClose, onUpdate, onDelete }:
                                     </div>
                                 </div>
                             )}
-
-                            {/* Comments */}
-                            <div className="space-y-4 pt-4 border-t border-white/10">
-                                <h3 className="text-lg font-bold text-white/90 flex items-center gap-2"><FiActivity /> فعالیت‌ها</h3>
-                                <div className="flex gap-3">
-                                    <div className="w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center text-xs font-bold">ME</div>
-                                    <input className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 text-sm focus:outline-none" placeholder="نوشتن نظر..." value={commentText} onChange={(e) => setCommentText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSendComment()} />
-                                </div>
-                                <div className="space-y-3 mt-2">
-                                    {mockComments.map(c => (
-                                        <div key={c.id} className="flex gap-3">
-                                            <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-xs">👤</div>
-                                            <div className="text-sm bg-white/5 p-3 rounded-xl rounded-tl-none text-white/80">{c.text}</div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
                         </div>
 
-                        {/* Right Sidebar */}
+                        {/* Sidebar Actions */}
                         <div className="w-full md:w-64 space-y-4 flex-shrink-0">
                             
-                            {/* 1. Members Dropdown */}
+                            {/* 1. Members Dropdown (Real Users) */}
                             <div className="relative">
                                 <button onClick={() => setShowUsers(!showUsers)} className="w-full flex items-center justify-between bg-white/5 hover:bg-white/10 text-white/90 py-3 px-4 rounded-lg text-sm transition border border-white/5">
                                     <div className="flex items-center gap-3"><FiUsers className="text-blue-400" /> {task.assigned_user_email || "تخصیص به عضو"}</div>
@@ -463,11 +411,11 @@ const TaskDetailModal = ({ task, teamMembers, onClose, onUpdate, onDelete }:
                                 </button>
                                 {showUsers && (
                                     <div className="absolute top-full left-0 w-full mt-2 bg-[#1a1a2e] border border-white/10 rounded-xl shadow-xl overflow-hidden z-30 max-h-40 overflow-y-auto custom-scrollbar">
-                                        {teamMembers.length > 0 ? teamMembers.map(u => (
-                                            <div key={u.id} onClick={() => { onUpdate({ assigned_to: u.id }); setShowUsers(false); }} className="px-4 py-2 hover:bg-white/10 cursor-pointer text-xs text-white/80 border-b border-white/5 last:border-0 truncate">
-                                                {u.email}
+                                        {teamMembers.map(u => (
+                                            <div key={u.id} onClick={() => { onUpdate({ assigned_to: u.id }); setShowUsers(false); }} className="px-4 py-2 hover:bg-white/10 cursor-pointer text-sm text-white/80 border-b border-white/5 last:border-0 truncate">
+                                                {u.full_name || u.email}
                                             </div>
-                                        )) : <div className="p-2 text-xs text-white/50 text-center">عضوی یافت نشد</div>}
+                                        ))}
                                     </div>
                                 )}
                             </div>
@@ -484,7 +432,7 @@ const TaskDetailModal = ({ task, teamMembers, onClose, onUpdate, onDelete }:
                                             calendar={persian}
                                             locale={persian_fa}
                                             calendarPosition="bottom-right"
-                                            range // ✅ قابلیت انتخاب بازه زمانی
+                                            range // ✅ فعال کردن بازه زمانی
                                             onChange={(dateObjects) => {
                                                 if (Array.isArray(dateObjects)) {
                                                     const dateString = dateObjects.map(d => d.toString()).join(' - ');
