@@ -45,17 +45,21 @@ export default function ProfilePage() {
     if (!profile) return;
     setSaving(true);
     
+    // ✅ اصلاح شده: استفاده از 'as any' برای رفع خطای TypeScript
+    // ما فیلدهای حساس (email, id, ...) را جدا می‌کنیم و بقیه را در safeUpdates می‌ریزیم
+    const { email, id, role, created_at, ...safeUpdates } = { ...profile, ...updates } as any;
+
     const { error } = await supabase
       .from('profiles')
-      .update(updates)
+      .update(safeUpdates)
       .eq('id', profile.id);
 
     if (!error) {
       setProfile({ ...profile, ...updates });
       alert("پروفایل با موفقیت به‌روزرسانی شد! ✅");
     } else {
-      console.error(error);
-      alert("خطا در ذخیره تغییرات. (مطمئن شوید ستون‌ها در دیتابیس وجود دارند)");
+      console.error("Update Error:", error);
+      alert(`خطا در ذخیره: ${error.message}`);
     }
     setSaving(false);
   };
