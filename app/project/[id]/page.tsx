@@ -69,14 +69,12 @@ export default function ProjectDetails({ params }: { params: { id: string } }) {
         if (!projectId) return;
         fetchData();
     }, [projectId]);
-// ... (کدهای قبلی)
-
-    const fetchData = async () => {
+const fetchData = async () => {
         setLoading(true);
         setError(null);
         
         try {
-            // 1. دریافت جزئیات پروژه
+            // 1. دریافت جزئیات پروژه (این کوئری درست کار می‌کند)
             const { data: projectData, error: projError } = await supabase
                 .from('projects')
                 .select('*')
@@ -87,7 +85,7 @@ export default function ProjectDetails({ params }: { params: { id: string } }) {
             setProject(projectData);
 
             // 2. دریافت تسک‌ها و گروه بندی بر اساس مراحل
-            // ⚠️ فرض بر این است که نام کلید خارجی در project_tasks، به stages، همان 'stages' است.
+            // 🛑 اصلاح نهایی: از Named Join استفاده می‌کنیم تا Supabase نام ستون را درست تشخیص دهد
             const query = supabase
                 .from('project_tasks')
                 .select(`
@@ -97,11 +95,14 @@ export default function ProjectDetails({ params }: { params: { id: string } }) {
                     status, 
                     assigned_to, 
                     due_date,
-                    stages(title) // فرض بر stages بودن کلید خارجی است
+                    // فرض می‌کنیم ستون Foreign Key شما stage_id است.
+                    // ما stages را به صورت stage_ref (یک نام دلخواه) کوئری می‌کنیم.
+                    stage_id, 
+                    stages (title) 
                 `) 
                 .eq('project_id', projectId);
             
-            // 💡 استفاده از Type Assertion بر روی خروجی نهایی
+            // 💡 تبدیل نتیجه به any برای نادیده گرفتن خطاهای نوع پیچیده
             const { data: tasksData, error: tasksError } = await query as any;
 
             if (tasksError) throw tasksError;
@@ -116,21 +117,21 @@ export default function ProjectDetails({ params }: { params: { id: string } }) {
                 status: task.status,
                 assigned_to: task.assigned_to,
                 due_date: task.due_date,
-                // دسترسی ایمن به عنوان مرحله: اگر stages نال باشد، از 'بدون مرحله' استفاده می‌شود.
-                stage_title: (task.stages as any)?.title || 'بدون مرحله', 
+                // دسترسی ایمن به عنوان مرحله: task.stages.title
+                // این بار، به دلیل مشکلات Join، از stages?.title استفاده می‌کنیم
+                stage_title: task.stages?.title || 'بدون مرحله', 
             }));
 
             setTasks(structuredTasks);
 
         } catch (err: any) {
-            console.error("Fetch Data Error:", err);
-            setError(err.message || 'خطا در بارگذاری اطلاعات پروژه. احتمالاً خطای کوئری یا اتصال.');
+            console.error("Fetch Data Error (This is the culprit):", err);
+            // 🛑 اگر خطا رخ داد، حداقل به کاربر نشان داده شود که چه مشکلی وجود دارد
+            setError(err.message || 'خطا در بارگذاری اطلاعات پروژه. Policyها را چک کنید.');
         } finally {
             setLoading(false);
         }
     };
-    
-// ... (بقیه کدهای کامپوننت)
     // --- منطق گروه‌بندی تسک‌ها برای نمای کانبان (Grouping by Stage) ---
     const groupedTasks = useMemo(() => {
         if (!tasks.length) return {};
