@@ -47,14 +47,13 @@ export default function Dashboard() {
     setLoading(false);
   };
 
-  // --- هندلر ایجاد پروژه جدید (Fix شده) ---
+  // --- هندلر ایجاد پروژه جدید (Trello Style) ---
   const handleCreateProject = async () => {
     if (!newProjectName.trim()) return;
     setCreating(true);
 
     try {
-        // 1. ساخت فرآیند (Process)
-        // نکته: طبق عکس ارور شما، دیتابیس روی جدول processes حساس بود که با SQL جدید حل شد.
+        // 1. ساخت فرآیند (Process) - این مرحله قبلاً ارور میداد که با SQL جدید حل شد
         const { data: proc, error: procError } = await supabase
             .from('processes')
             .insert({ title: newProjectName })
@@ -135,7 +134,7 @@ export default function Dashboard() {
   return (
     <div className="p-8 text-white min-h-screen">
       
-      {/* Header */}
+      {/* Header: دکمه اضافی حذف شد */}
       <div className="flex flex-col md:flex-row justify-between items-center mb-10 gap-4">
         <div>
             <h1 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400">
@@ -143,18 +142,13 @@ export default function Dashboard() {
             </h1>
             <p className="text-sm text-white/50 mt-2">مدیریت پروژه‌ها و تسک‌های روزانه</p>
         </div>
-        <button 
-            onClick={() => setShowModal(true)}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-2xl transition shadow-lg shadow-blue-600/20 font-bold backdrop-blur-md"
-        >
-            <FiPlus size={20} /> پروژه جدید
-        </button>
+        {/* دکمه‌ای که اینجا بود حذف شد */}
       </div>
 
       {/* Projects Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         
-        {/* دکمه بزرگ ایجاد پروژه */}
+        {/* دکمه بزرگ ایجاد پروژه (کارت) */}
         <button 
             onClick={() => setShowModal(true)}
             className="border-2 border-dashed border-white/10 rounded-[2rem] flex flex-col items-center justify-center text-white/30 hover:text-white/60 hover:border-white/20 hover:bg-white/5 transition min-h-[200px] gap-4 group"
