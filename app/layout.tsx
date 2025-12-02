@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import Link from "next/link";
-// router در page.tsx شما استفاده شده بود، نیازی به import در layout نیست
 
 export const metadata: Metadata = {
   title: "دیجی‌تسک | مدیریت پروژه",
@@ -16,7 +15,7 @@ export default function RootLayout({
   return (
     <html lang="fa" dir="rtl">
       <head>
-        {/* ✅ بارگذاری فونت Vazirmatn در head برای جلوگیری از خطای بیلد */}
+        {/* بارگذاری فونت وزیر برای جلوگیری از خطای بیلد و نمایش صحیح متون فارسی */}
         <link 
           href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css" 
           rel="stylesheet" 
@@ -24,17 +23,18 @@ export default function RootLayout({
         />
       </head>
       
-      <body className="flex h-screen w-screen overflow-hidden">
+      <body className="flex h-screen w-screen overflow-hidden bg-[#0D0D15] text-white">
         
-        {/* کانتینر اصلی که فاصله‌ها و لایه‌بندی فلکس را تنظیم می‌کند */}
+        {/* کانتینر اصلی صفحه */}
         <div className="relative z-10 flex w-full h-full p-4 gap-4 md:gap-6 md:p-6">
           
-          {/* --- سایدبار (پنل شناور سمت راست) --- */}
+          {/* --- سایدبار (منوی سمت راست) --- */}
           <aside className="hidden md:flex flex-col w-72 h-full flex-shrink-0">
             <div className="glass w-full h-full rounded-3xl p-6 flex flex-col justify-between">
               
               {/* بخش بالا: لوگو و منو */}
               <div>
+                {/* لوگو */}
                 <div className="flex items-center gap-4 mb-10 px-2">
                   <div className="w-12 h-12 flex items-center justify-center rounded-2xl bg-gradient-to-tr from-blue-600 to-purple-600 shadow-lg shadow-blue-500/30 text-white font-bold text-xl">
                     DT
@@ -47,9 +47,12 @@ export default function RootLayout({
 
                 {/* لینک‌های منو */}
                 <nav className="space-y-3">
-                  <SidebarLink href="/" icon="🏠" label="میز کار من" active />
+                  <SidebarLink href="/" icon="🏠" label="میز کار من" />
                   <SidebarLink href="/team" icon="👥" label="اعضای تیم" />
-                  <SidebarLink href="/profile" icon="⚙️" label="تنظیمات" />
+                  {/* ✅ لینک جدید تقویم */}
+                  <SidebarLink href="/calendar" icon="📅" label="تقویم" />
+                  {/* ✅ تغییر تنظیمات به پروفایل */}
+                  <SidebarLink href="/profile" icon="👤" label="پروفایل من" />
                 </nav>
               </div>
 
@@ -98,7 +101,7 @@ function SidebarLink({ href, icon, label, active = false }: { href: string; icon
       <span className={`text-xl transition-transform duration-300 ${!active && "group-hover:scale-110"}`}>{icon}</span>
       <span className="font-medium text-sm">{label}</span>
       
-      {/* نشانگر فعال بودن */}
+      {/* نشانگر فعال بودن (اختیاری) */}
       {active && <div className="mr-auto w-1.5 h-1.5 rounded-full bg-blue-400 shadow-[0_0_10px_rgba(96,165,250,0.8)]" />}
     </Link>
   );
