@@ -1,9 +1,9 @@
 "use client";
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-// برای استفاده از آیکون‌های ساده
+// فرض بر نصب موفقیت‌آمیز react-icons
 import { FiMessageSquare, FiFileText, FiDownload, FiUpload, FiUsers, FiClock, FiCheckSquare, FiPlus, FiTrash } from 'react-icons/fi';
 
 
@@ -45,7 +45,9 @@ type Attachment = {
 
 export default function ProjectDetails({ params }: { params: { id: string } }) {
     const router = useRouter();
+    // 🛑 ایمن‌سازی: ID را ابتدا به عنوان یک رشته بررسی می‌کنیم
     const projectId = parseInt(params.id);
+    const isValidId = !isNaN(projectId);
 
     const [project, setProject] = useState<Project | null>(null);
     const [tasks, setTasks] = useState<Task[]>([]);
@@ -64,12 +66,14 @@ export default function ProjectDetails({ params }: { params: { id: string } }) {
     const [newCommentText, setNewCommentText] = useState('');
     // --- پایان MOCK DATA ---
     
+    // 🛑 تابع fetchData به یک useCallback تبدیل شد تا خطای زنجیره‌سازی در useEffect ندهد
+    const fetchData = useCallback(async () => {
+        if (!isValidId) {
+            setLoading(false);
+            setError("شناسه پروژه نامعتبر است (NaN).");
+            return;
+        }
 
-    useEffect(() => {
-        if (!projectId) return;
-        fetchData();
-    }, [projectId]);
-const fetchData = async () => {
         setLoading(true);
         setError(null);
         
@@ -84,8 +88,7 @@ const fetchData = async () => {
             if (projError || !projectData) throw new Error('پروژه پیدا نشد.');
             setProject(projectData);
 
-            // 2. دریافت تسک‌ها و گروه بندی بر اساس مراحل
-            // 🛑 اصلاح نهایی: از Named Join استفاده می‌کنیم تا Supabase نام ستون را درست تشخیص دهد
+            // 2. دریافت تسک‌ها و مراحل مرتبط
             const query = supabase
                 .from('project_tasks')
                 .select(`
@@ -95,19 +98,15 @@ const fetchData = async () => {
                     status, 
                     assigned_to, 
                     due_date,
-                    // فرض می‌کنیم ستون Foreign Key شما stage_id است.
-                    // ما stages را به صورت stage_ref (یک نام دلخواه) کوئری می‌کنیم.
-                    stage_id, 
-                    stages (title) 
+                    stages(title) 
                 `) 
                 .eq('project_id', projectId);
             
-            // 💡 تبدیل نتیجه به any برای نادیده گرفتن خطاهای نوع پیچیده
+            // 💡 Type Assertion بر روی خروجی نهایی
             const { data: tasksData, error: tasksError } = await query as any;
 
             if (tasksError) throw tasksError;
-
-            // تبدیل داده‌های خام (any) به ساختار Task
+            
             const rawTasks: any[] = tasksData; 
 
             const structuredTasks: Task[] = rawTasks.map((task: any) => ({
@@ -117,21 +116,28 @@ const fetchData = async () => {
                 status: task.status,
                 assigned_to: task.assigned_to,
                 due_date: task.due_date,
-                // دسترسی ایمن به عنوان مرحله: task.stages.title
-                // این بار، به دلیل مشکلات Join، از stages?.title استفاده می‌کنیم
                 stage_title: task.stages?.title || 'بدون مرحله', 
             }));
 
             setTasks(structuredTasks);
 
         } catch (err: any) {
-            console.error("Fetch Data Error (This is the culprit):", err);
-            // 🛑 اگر خطا رخ داد، حداقل به کاربر نشان داده شود که چه مشکلی وجود دارد
-            setError(err.message || 'خطا در بارگذاری اطلاعات پروژه. Policyها را چک کنید.');
+            console.error("Critical Fetch Data Error:", err);
+            // 🛑 نمایش خطای دریافتی از دیتابیس به کاربر
+            setError(err.message || 'خطا در بارگذاری اطلاعات پروژه. Policyها یا اتصال را چک کنید.');
         } finally {
             setLoading(false);
         }
-    };
+    }, [projectId, isValidId]); // وابستگی به projectId و isValidId
+
+
+    useEffect(() => {
+        // اجرای fetchData فقط یکبار پس از mount
+        if (isValidId) {
+             fetchData();
+        }
+    }, [fetchData, isValidId]); // وابسته به fetchData
+
     // --- منطق گروه‌بندی تسک‌ها برای نمای کانبان (Grouping by Stage) ---
     const groupedTasks = useMemo(() => {
         if (!tasks.length) return {};
@@ -152,27 +158,35 @@ const fetchData = async () => {
         const newComment: Comment = {
             id: comments.length + 1,
             text: newCommentText,
-            user_name: 'کاربر فعلی', // در فاز واقعی باید نام کاربر لاگین شده باشد
+            user_name: 'کاربر فعلی', 
             created_at: new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }),
         };
         
-        setComments([newComment, ...comments]); // اضافه کردن به ابتدای لیست
+        setComments([newComment, ...comments]); 
         setNewCommentText('');
-        // در فاز بعدی: اتصال به Supabase
     };
 
     if (loading) {
+        // تغییر پیام برای رصد بهتر
         return (
             <div className="flex-1 w-full flex items-center justify-center">
                 <div className="w-full glass p-5 rounded-3xl text-white/70 text-center">
-                    <p className="animate-pulse">در حال بارگذاری پروژه {projectId}...</p>
+                    {/* پیام لودینگ بهتر */}
+                    <p className="animate-pulse">در حال بارگذاری پروژه {isValidId ? projectId : '...'}...</p>
+                    <p className='text-xs mt-2'>لطفا Policyهای Supabase را چک کنید اگر طول کشید.</p>
                 </div>
             </div>
         );
     }
 
     if (error) {
-        return <div className="p-8 text-red-400 font-bold glass rounded-3xl">{error}</div>;
+        return (
+            <div className="p-8 text-red-400 font-bold glass rounded-3xl border border-red-500/50">
+                <p className='text-xl'>❌ خطا در بارگذاری اطلاعات</p>
+                <p className='text-sm mt-3 border-t border-white/20 pt-3'>جزئیات خطا: {error}</p>
+                <p className='text-xs mt-2 text-white/60'>(اگر خطای Policy است، در Supabase Policyهای SELECT را برای جداول projects/project_tasks/stages چک کنید.)</p>
+            </div>
+        );
     }
 
     if (!project) return <div className="p-8 text-white">پروژه موجود نیست.</div>;
