@@ -1,9 +1,10 @@
-import React from "react"; // جهت اطمینان از تایپ React.ReactNode
+import React from "react";
 import type { Metadata } from "next";
 import "./globals.css";
 import MainSidebar from "@/components/MainSidebar";
-// 1. ایمپورت کردن کامپوننت پومودورو
 import PomodoroTimer from "@/components/PomodoroTimer";
+// 1. ایمپورت استایل و کامپوننت نوتیفیکیشن
+import { Toaster } from 'react-hot-toast';
 
 export const metadata: Metadata = {
   title: "دیجی‌تسک | مدیریت پروژه",
@@ -36,8 +37,26 @@ export default function RootLayout({
           </main>
         </div>
 
-        {/* 2. اضافه کردن ویجت تایمر در اینجا (خارج از دیوهای اصلی تا روی همه چیز قرار بگیرد) */}
+        {/* ویجت‌های شناور */}
         <PomodoroTimer />
+        
+        {/* کانفیگ نوتیفیکیشن‌ها (Toast) */}
+        <Toaster 
+            position="top-center"
+            toastOptions={{
+                style: {
+                    background: '#1a1a2e',
+                    color: '#fff',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                },
+                success: {
+                    iconTheme: {
+                        primary: '#4ade80',
+                        secondary: '#black',
+                    },
+                },
+            }}
+        />
         
       </body>
     </html>

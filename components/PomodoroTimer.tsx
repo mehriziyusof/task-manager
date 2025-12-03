@@ -8,7 +8,9 @@ export default function PomodoroTimer() {
     const [isActive, setIsActive] = useState(false);
     const [mode, setMode] = useState<'work' | 'break'>('work');
     const [isMinimized, setIsMinimized] = useState(false);
-    const [position, setPosition] = useState({ x: 20, y: 20 }); // فاصله از پایین و راست
+    
+    // پوزیشن اولیه (فاصله از راست و پایین)
+    const [position, setPosition] = useState({ x: 20, y: 20 }); 
     const [isDragging, setIsDragging] = useState(false);
     
     // Task Linking
@@ -16,24 +18,16 @@ export default function PomodoroTimer() {
     const [selectedTask, setSelectedTask] = useState<string | null>(null);
     const [showTaskSelector, setShowTaskSelector] = useState(false);
 
-    // Fetch user tasks
     useEffect(() => {
         const fetchMyTasks = async () => {
             const { data: { user } } = await supabase.auth.getUser();
             if(!user) return;
-            
-            const { data } = await supabase
-                .from('project_tasks')
-                .select('id, title')
-                .eq('assigned_to', user.id) // فقط تسک‌های خودم
-                .neq('status', 'completed'); // فقط تسک‌های ناتمام
-                
+            const { data } = await supabase.from('project_tasks').select('id, title').eq('assigned_to', user.id).neq('status', 'completed');
             if(data) setMyTasks(data);
         };
         fetchMyTasks();
     }, []);
 
-    // Timer Logic
     useEffect(() => {
         let interval: any = null;
         if (isActive && timeLeft > 0) {
@@ -48,12 +42,13 @@ export default function PomodoroTimer() {
         return () => clearInterval(interval);
     }, [isActive, timeLeft, mode]);
 
-    // Drag Logic (Simple Implementation)
+    // Drag Logic (Universal)
     const dragRef = useRef<HTMLDivElement>(null);
+    const buttonDragRef = useRef<HTMLButtonElement>(null);
+
     useEffect(() => {
         const handleMouseMove = (e: MouseEvent) => {
             if (!isDragging) return;
-            // محاسبه موقعیت برعکس (چون right/bottom فیکس هستند)
             setPosition(prev => ({
                 x: prev.x - e.movementX,
                 y: prev.y - e.movementY
@@ -83,9 +78,11 @@ export default function PomodoroTimer() {
     if (isMinimized) {
         return (
             <button 
-                onClick={() => setIsMinimized(false)}
-                style={{ right: `${position.x}px`, bottom: `${position.y}px` }}
-                className="fixed z-50 w-14 h-14 bg-gradient-to-tr from-purple-600 to-blue-600 rounded-full flex items-center justify-center shadow-2xl hover:scale-110 transition animate-bounce-slow cursor-pointer"
+                ref={buttonDragRef}
+                onMouseDown={(e) => { e.stopPropagation(); setIsDragging(true); }}
+                onClick={(e) => { if(!isDragging) setIsMinimized(false); }}
+                style={{ right: `${position.x}px`, bottom: `${position.y}px`, cursor: isDragging ? 'grabbing' : 'grab' }}
+                className="fixed z-50 w-14 h-14 bg-gradient-to-tr from-purple-600 to-blue-600 rounded-full flex items-center justify-center shadow-2xl hover:scale-105 transition animate-bounce-slow"
             >
                 <FiClock className="text-white text-xl" />
             </button>
@@ -118,7 +115,7 @@ export default function PomodoroTimer() {
                 <div className="mb-4 relative">
                      <button onClick={() => setShowTaskSelector(!showTaskSelector)} className="w-full bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg p-2 flex items-center gap-2 text-xs text-white/80 transition">
                         <FiCheckCircle className={selectedTask ? "text-blue-400" : "text-white/30"} />
-                        <span className="truncate flex-1 text-right">{selectedTask || "انتخاب تسک برای تمرکز..."}</span>
+                        <span className="truncate flex-1 text-right">{selectedTask || "انتخاب تسک..."}</span>
                         <FiList />
                      </button>
                      {showTaskSelector && (
