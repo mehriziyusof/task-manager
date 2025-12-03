@@ -571,20 +571,21 @@ const TaskDetailModal = ({ task, teamMembers, onClose, onUpdate, onDelete }:
                             </div>
 
 {/* Date Picker (Range + Value Fix) */}
-                            <div className="relative group w-full">
+<div className="relative group w-full">
                                 <DatePicker 
-                                    // اصلاح شده: اضافه کردن as any برای رفع ارور تایپ‌اسکریپت
                                     value={task.due_date as any} 
                                     calendar={persian}
                                     locale={persian_fa}
+                                    format="YYYY/MM/DD" // <--- این خط کلید حل مشکل است
                                     range
                                     rangeHover
                                     onChange={(dateObjects: any) => {
                                         if (Array.isArray(dateObjects)) {
-                                            const dateString = dateObjects.map((d: any) => d.toString()).join(' - ');
+                                            // ذخیره با فرمت استاندارد
+                                            const dateString = dateObjects.map((d: any) => d.format("YYYY/MM/DD")).join(' - ');
                                             onUpdate({ due_date: dateString });
                                         } else if (dateObjects) {
-                                            onUpdate({ due_date: dateObjects.toString() });
+                                            onUpdate({ due_date: dateObjects.format("YYYY/MM/DD") });
                                         }
                                     }}
                                     render={(value: any, openCalendar: any) => (
@@ -602,7 +603,7 @@ const TaskDetailModal = ({ task, teamMembers, onClose, onUpdate, onDelete }:
                                     )}
                                 />
                             </div>
-                            
+
                             {/* Upload Button */}
                             <button onClick={() => fileInputRef.current?.click()} className="w-full flex items-center gap-3 bg-white/5 hover:bg-white/10 text-white/90 py-3 px-4 rounded-lg text-sm transition text-right group border border-white/5 hover:border-white/20">
                                 <FiUpload className="text-purple-400" /> 
