@@ -570,23 +570,27 @@ const TaskDetailModal = ({ task, teamMembers, onClose, onUpdate, onDelete }:
                                 )}
                             </div>
 
-{/* Date Picker (Range + Value Fix) */}
-<div className="relative group w-full">
+{/* Date Picker - Fixed Types */}
+                            <div className="relative group w-full">
                                 <DatePicker 
+                                    // اصلاح شده: اضافه کردن as any برای جلوگیری از خطای تایپ
                                     value={task.due_date as any} 
                                     calendar={persian}
                                     locale={persian_fa}
-                                    format="YYYY/MM/DD" // <--- این خط کلید حل مشکل است
+                                    format="YYYY/MM/DD"
                                     range
                                     rangeHover
                                     onChange={(dateObjects: any) => {
+                                        if (!dateObjects) return;
+                                        
+                                        let finalDateString = "";
                                         if (Array.isArray(dateObjects)) {
-                                            // ذخیره با فرمت استاندارد
-                                            const dateString = dateObjects.map((d: any) => d.format("YYYY/MM/DD")).join(' - ');
-                                            onUpdate({ due_date: dateString });
-                                        } else if (dateObjects) {
-                                            onUpdate({ due_date: dateObjects.format("YYYY/MM/DD") });
+                                            finalDateString = dateObjects.map((d: any) => d.format("YYYY/MM/DD")).join(' - ');
+                                        } else {
+                                            finalDateString = dateObjects.format("YYYY/MM/DD");
                                         }
+                                        
+                                        onUpdate({ due_date: finalDateString });
                                     }}
                                     render={(value: any, openCalendar: any) => (
                                         <button 
@@ -594,9 +598,12 @@ const TaskDetailModal = ({ task, teamMembers, onClose, onUpdate, onDelete }:
                                             className="w-full flex items-center justify-between bg-white/5 hover:bg-white/10 text-white/90 py-3 px-4 rounded-lg text-sm transition border border-white/5 cursor-pointer"
                                         >
                                             <div className="flex items-center gap-3">
-                                                <FiClock className="text-yellow-400" />
-                                                <span className="truncate">
-                                                    {task.due_date ? task.due_date : 'تاریخ سررسید'}
+                                                {/* اصلاح شرط کلاس برای رنگ آیکون */}
+                                                <FiClock className={`text-lg ${task.due_date ? 'text-blue-400' : 'text-white/40'}`} />
+                                                
+                                                {/* اصلاح شرط کلاس برای رنگ متن */}
+                                                <span className={`truncate ${task.due_date ? 'text-white' : 'text-white/40'}`}>
+                                                    {task.due_date ? task.due_date : 'انتخاب تاریخ سررسید...'}
                                                 </span>
                                             </div>
                                         </button>
