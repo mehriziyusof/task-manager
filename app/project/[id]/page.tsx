@@ -5,10 +5,11 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { 
   FiMessageSquare, FiFileText, FiDownload, FiUpload, 
-  FiUsers, FiClock, FiPlus, FiX, FiCheckSquare, FiActivity, FiChevronDown, FiCalendar, FiTrash2
+  FiUsers, FiClock, FiPlus, FiX, FiCheckSquare, FiActivity, FiChevronDown, FiCalendar, FiTrash2,
+  FiChevronLeft, FiChevronRight
 } from 'react-icons/fi';
 
-import DatePicker from "react-multi-date-picker";
+import DatePicker, { DateObject } from "react-multi-date-picker";
 import persian from "react-date-object/calendars/persian";
 import persian_fa from "react-date-object/locales/persian_fa";
 
@@ -65,48 +66,49 @@ export default function ProjectDetails() {
     const isValidId = !isNaN(projectId);
 
     const [project, setProject] = useState<Project | null>(null);
-    const [stages, setStages] = useState<Stage[]>([]); // استیت جدید برای نگهداری مراحل
+    const [stages, setStages] = useState<Stage[]>([]);
     const [tasks, setTasks] = useState<Task[]>([]);
     const [teamMembers, setTeamMembers] = useState<UserProfile[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [selectedTask, setSelectedTask] = useState<Task | null>(null);
 
+    // --- Refs & State for Drag Scrolling ---
+    const scrollContainerRef = useRef<HTMLDivElement>(null);
+    const [isDragging, setIsDragging] = useState(false);
+    const [startX, setStartX] = useState(0);
+    const [scrollLeft, setScrollLeft] = useState(0);
+
     const fetchData = useCallback(async () => {
         if (!isValidId) return;
         setLoading(true);
         setError(null);
         try {
-            // 1. پروژه
             const { data: projectData, error: projError } = await supabase
                 .from('projects').select('*').eq('id', projectId).single();
             
             if (projError || !projectData) throw new Error('پروژه پیدا نشد.');
             setProject(projectData);
 
-            // 2. مراحل (Stages) - اصلاح شده برای ذخیره در استیت
             const { data: stagesData } = await supabase
                 .from('stages')
                 .select('id, title, sort_order')
                 .eq('process_id', projectData.process_id)
-                .order('sort_order', { ascending: true }); // مرتب‌سازی مراحل
+                .order('sort_order', { ascending: true });
             
             if (stagesData) {
-                setStages(stagesData); // ذخیره مراحل برای رندر کردن ستون‌ها
+                setStages(stagesData);
                 stagesData.forEach(s => stageTitleCache[s.id] = s.title);
             }
 
-            // 3. اعضا
             const { data: profiles } = await supabase.from('profiles').select('id, email, full_name, role');
             if (profiles) setTeamMembers(profiles);
 
-            // 4. تسک‌ها
             const { data: rawTasks, error: taskError } = await supabase
                 .from('project_tasks').select('*').eq('project_id', projectId);
             
             if (taskError) throw taskError;
 
-            // تبدیل داده‌ها
             const finalTasks: Task[] = (rawTasks || []).map((t: any) => {
                 const assignedUser = profiles?.find(p => p.id === t.assigned_to);
                 return {
@@ -135,11 +137,35 @@ export default function ProjectDetails() {
 
     useEffect(() => { if (isValidId) fetchData(); }, [isValidId, fetchData]);
 
-    // --- افزودن تسک جدید ---
+    // --- Drag Handlers ---
+    const handleMouseDown = (e: React.MouseEvent) => {
+        if (!scrollContainerRef.current) return;
+        setIsDragging(true);
+        setStartX(e.pageX - scrollContainerRef.current.offsetLeft);
+        setScrollLeft(scrollContainerRef.current.scrollLeft);
+    };
+    const handleMouseLeave = () => { setIsDragging(false); };
+    const handleMouseUp = () => { setIsDragging(false); };
+    const handleMouseMove = (e: React.MouseEvent) => {
+        if (!isDragging || !scrollContainerRef.current) return;
+        e.preventDefault();
+        const x = e.pageX - scrollContainerRef.current.offsetLeft;
+        const walk = (x - startX) * 2;
+        scrollContainerRef.current.scrollLeft = scrollLeft - walk;
+    };
+
+    const scrollBoard = (direction: 'left' | 'right') => {
+        if (!scrollContainerRef.current) return;
+        const scrollAmount = 320;
+        scrollContainerRef.current.scrollBy({ 
+            left: direction === 'left' ? -scrollAmount : scrollAmount, 
+            behavior: 'smooth' 
+        });
+    };
+
     const handleAddTask = async (stageId: number, stageTitle: string) => {
         const tempTitle = "تسک جدید";
         try {
-            // ایجاد تسک در دیتابیس
             const { data, error } = await supabase
                 .from('project_tasks')
                 .insert({
@@ -166,7 +192,6 @@ export default function ProjectDetails() {
                     attachments: []
                 };
                 setTasks(prev => [...prev, newTask]);
-                // بلافاصله مودال را باز کن تا کاربر ویرایش کند
                 setSelectedTask(newTask);
             }
         } catch (err: any) {
@@ -175,7 +200,6 @@ export default function ProjectDetails() {
     };
 
     const updateTask = async (taskId: number, updates: Partial<Task>) => {
-        // آپدیت لوکال
         setTasks(prev => prev.map(t => {
             if (t.id !== taskId) return t;
             let newUserEmail = t.assigned_user_email;
@@ -198,7 +222,6 @@ export default function ProjectDetails() {
             });
         }
 
-        // آپدیت دیتابیس
         try {
             const { checklist, attachments, stage_title, assigned_user_email, ...dbUpdates } = updates as any;
             if (Object.keys(dbUpdates).length > 0) {
@@ -221,9 +244,8 @@ export default function ProjectDetails() {
     if (!project) return null;
 
     return (
-        <div className="p-6 md:p-10 text-white pb-20 relative min-h-screen">
-            {/* Header */}
-            <div className="flex justify-between items-center mb-8 border-b border-white/10 pb-6">
+        <div className="p-6 md:p-10 text-white pb-20 relative min-h-screen flex flex-col">
+            <div className="flex justify-between items-center mb-8 border-b border-white/10 pb-6 flex-shrink-0">
                 <div>
                     <h1 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400 mb-1">
                         {project.title}
@@ -246,32 +268,38 @@ export default function ProjectDetails() {
                 </div>
             </div>
 
-            {/* Kanban Board */}
-            <div className="flex overflow-x-auto pb-8 gap-6 scrollbar-hide h-[calc(100vh-200px)]">
-                {stages.map((stage) => {
-                    // فیلتر کردن تسک‌های مربوط به این مرحله
-                    const stageTasks = tasks.filter(t => t.stage_id === stage.id);
-                    
-                    return (
-                        <div key={stage.id} className="min-w-[300px] w-[300px] flex-shrink-0 h-full">
-                            <div className="bg-[#121212]/60 backdrop-blur-sm rounded-xl border border-white/5 h-full flex flex-col">
-                                {/* Column Header */}
-                                <div className="p-4 border-b border-white/5 flex justify-between items-center bg-white/5 rounded-t-xl">
-                                    <h3 className="font-bold text-blue-100 text-sm">
-                                        {stage.title}
-                                    </h3>
-                                    <span className="bg-black/40 text-xs px-2 py-1 rounded-full text-white/60 font-mono">
-                                        {stageTasks.length}
-                                    </span>
-                                </div>
+            <div className="absolute top-32 right-6 z-10 flex gap-2">
+                 <button onClick={() => scrollBoard('right')} className="bg-white/10 hover:bg-blue-500 p-2 rounded-full backdrop-blur-md transition border border-white/10">
+                    <FiChevronRight className="text-white" />
+                 </button>
+                 <button onClick={() => scrollBoard('left')} className="bg-white/10 hover:bg-blue-500 p-2 rounded-full backdrop-blur-md transition border border-white/10">
+                    <FiChevronLeft className="text-white" />
+                 </button>
+            </div>
 
-                                {/* Tasks Container */}
+            <div 
+                ref={scrollContainerRef}
+                onMouseDown={handleMouseDown}
+                onMouseLeave={handleMouseLeave}
+                onMouseUp={handleMouseUp}
+                onMouseMove={handleMouseMove}
+                className={`flex overflow-x-auto pb-8 gap-6 scrollbar-hide flex-1 items-start select-none ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+            >
+                {stages.map((stage) => {
+                    const stageTasks = tasks.filter(t => t.stage_id === stage.id);
+                    return (
+                        <div key={stage.id} className="min-w-[300px] w-[300px] flex-shrink-0 h-full max-h-[calc(100vh-220px)] flex flex-col">
+                            <div className="bg-[#121212]/60 backdrop-blur-sm rounded-xl border border-white/5 h-full flex flex-col shadow-lg">
+                                <div className="p-4 border-b border-white/5 flex justify-between items-center bg-white/5 rounded-t-xl">
+                                    <h3 className="font-bold text-blue-100 text-sm">{stage.title}</h3>
+                                    <span className="bg-black/40 text-xs px-2 py-1 rounded-full text-white/60 font-mono">{stageTasks.length}</span>
+                                </div>
                                 <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-3">
                                     {stageTasks.map(task => (
                                         <div 
                                             key={task.id} 
-                                            onClick={() => setSelectedTask(task)}
-                                            className="glass glass-hover p-4 rounded-xl border border-white/5 cursor-pointer group hover:border-blue-500/30 transition-all bg-[#1e1e2e]/80"
+                                            onClick={() => !isDragging && setSelectedTask(task)}
+                                            className="glass glass-hover p-4 rounded-xl border border-white/5 cursor-pointer group hover:border-blue-500/30 transition-all bg-[#1e1e2e]/80 hover:bg-[#252538]"
                                         >
                                             <div className="flex justify-between items-start mb-2">
                                                 <h4 className="font-medium text-sm text-white group-hover:text-blue-200 leading-snug">{task.title}</h4>
@@ -289,8 +317,6 @@ export default function ProjectDetails() {
                                         </div>
                                     ))}
                                 </div>
-
-                                {/* Add Task Button (Footer) */}
                                 <div className="p-3 pt-2">
                                     <button 
                                         onClick={() => handleAddTask(stage.id, stage.title)}
@@ -303,25 +329,8 @@ export default function ProjectDetails() {
                         </div>
                     );
                 })}
-                
-                {/* ستون برای تسک‌های بدون مرحله (جهت اطمینان) */}
-                {tasks.filter(t => !t.stage_id).length > 0 && (
-                     <div className="min-w-[300px] w-[300px] flex-shrink-0 h-full">
-                        <div className="bg-red-900/10 rounded-xl p-4 border border-red-500/20 h-full flex flex-col">
-                            <h3 className="font-bold mb-4 text-red-300">دسته‌بندی نشده</h3>
-                            <div className="space-y-3 flex-1 overflow-y-auto">
-                                {tasks.filter(t => !t.stage_id).map(task => (
-                                    <div key={task.id} onClick={() => setSelectedTask(task)} className="bg-white/5 p-4 rounded-xl cursor-pointer">
-                                        {task.title}
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                     </div>
-                )}
             </div>
 
-            {/* Modal */}
             {selectedTask && (
                 <TaskDetailModal 
                     task={selectedTask} 
@@ -334,8 +343,6 @@ export default function ProjectDetails() {
         </div>
     );
 }
-
-// --- Helper Components --- (بدون تغییر)
 
 const StatusBadge = ({ status }: { status: TaskStatus }) => {
     const map = {
@@ -355,12 +362,12 @@ const TaskDetailModal = ({ task, teamMembers, onClose, onUpdate, onDelete }:
     const [newChecklistTitle, setNewChecklistTitle] = useState("");
     const [commentText, setCommentText] = useState('');
     const [showUsers, setShowUsers] = useState(false);
+    const [uploading, setUploading] = useState(false); // استیت برای لودینگ آپلود
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const datePickerRef = useRef<any>(null); // رفرنس برای تقویم
 
-    // Mock Comments
     const [mockComments, setMockComments] = useState<Comment[]>([{ id: 1, text: "تسک ایجاد شد.", user_name: "سیستم", created_at: "شروع" }]);
 
-    // sync description if task changes
     useEffect(() => { setDescription(task.description || "") }, [task.id]);
 
     const handleDescriptionBlur = () => {
@@ -382,14 +389,40 @@ const TaskDetailModal = ({ task, teamMembers, onClose, onUpdate, onDelete }:
         onUpdate({ checklist: newChecklist });
     };
 
-    const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // --- Real File Upload ---
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!e.target.files || e.target.files.length === 0) return;
+        setUploading(true);
         const file = e.target.files[0];
-        const type = file.name.split('.').pop() || 'file';
-        const newAttachment = { name: file.name, url: '#', type };
-        const newAttachments = [...(task.attachments || []), newAttachment];
-        onUpdate({ attachments: newAttachments });
-        alert("فایل به لیست اضافه شد (نیاز به Storage دارد)");
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+        const filePath = `${fileName}`;
+
+        try {
+            // 1. Upload to Supabase Storage
+            const { error: uploadError } = await supabase.storage
+                .from('task-attachments') // مطمئن شوید باکتی با این نام ساخته‌اید
+                .upload(filePath, file);
+
+            if (uploadError) throw uploadError;
+
+            // 2. Get Public URL
+            const { data: { publicUrl } } = supabase.storage
+                .from('task-attachments')
+                .getPublicUrl(filePath);
+
+            // 3. Update Task Data
+            const newAttachment = { name: file.name, url: publicUrl, type: fileExt || 'file' };
+            const newAttachments = [...(task.attachments || []), newAttachment];
+            onUpdate({ attachments: newAttachments });
+            alert("فایل با موفقیت آپلود شد!");
+
+        } catch (error: any) {
+            console.error('Upload error:', error);
+            alert('خطا در آپلود فایل: ' + error.message);
+        } finally {
+            setUploading(false);
+        }
     };
 
     const handleSendComment = () => {
@@ -402,13 +435,11 @@ const TaskDetailModal = ({ task, teamMembers, onClose, onUpdate, onDelete }:
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xl animate-fade-in" onClick={onClose}>
             <div className="glass w-full max-w-4xl max-h-[85vh] overflow-y-auto rounded-3xl border border-white/10 shadow-2xl relative animate-scale-up custom-scrollbar" onClick={(e) => e.stopPropagation()}>
                 
-                {/* Header */}
                 <div className="h-24 bg-gradient-to-r from-blue-900/40 to-purple-900/40 w-full relative">
                     <button onClick={onClose} className="absolute top-4 right-4 bg-black/40 hover:bg-red-500/80 text-white p-2 rounded-full transition backdrop-blur-md z-20"><FiX size={20} /></button>
                 </div>
 
                 <div className="p-6 md:p-10 space-y-8 -mt-10 relative z-10">
-                    {/* Title */}
                     <div className="space-y-2">
                         <div className="flex gap-2 items-center">
                             <span className="bg-black/60 backdrop-blur-md text-xs px-3 py-1 rounded-full text-blue-300 border border-white/10">{task.stage_title}</span>
@@ -431,7 +462,6 @@ const TaskDetailModal = ({ task, teamMembers, onClose, onUpdate, onDelete }:
                     </div>
 
                     <div className="flex flex-col md:flex-row gap-10">
-                        {/* Main Content */}
                         <div className="flex-1 space-y-6">
                             <div className="space-y-2">
                                 <h3 className="text-lg font-bold text-white/90 flex items-center gap-2"><FiFileText/> توضیحات</h3>
@@ -444,7 +474,6 @@ const TaskDetailModal = ({ task, teamMembers, onClose, onUpdate, onDelete }:
                                 />
                             </div>
 
-                            {/* Checklist */}
                             <div className="space-y-2">
                                 <h3 className="text-lg font-bold text-white/90 flex items-center gap-2"><FiCheckSquare /> چک‌لیست</h3>
                                 {task.checklist?.map((item) => (
@@ -461,22 +490,20 @@ const TaskDetailModal = ({ task, teamMembers, onClose, onUpdate, onDelete }:
                                 </div>
                             </div>
 
-                            {/* Attachments */}
                             {task.attachments && task.attachments.length > 0 && (
                                 <div className="space-y-2">
                                     <h3 className="text-lg font-bold text-white/90 flex items-center gap-2"><FiDownload /> فایل‌ها</h3>
                                     <div className="grid grid-cols-2 gap-2">
                                         {task.attachments.map((file, idx) => (
-                                            <div key={idx} className="bg-white/5 p-3 rounded-xl border border-white/10 flex items-center gap-3 hover:bg-white/10 transition cursor-pointer">
+                                            <a key={idx} href={file.url} target="_blank" rel="noreferrer" className="bg-white/5 p-3 rounded-xl border border-white/10 flex items-center gap-3 hover:bg-white/10 transition cursor-pointer">
                                                 <div className="bg-blue-500/20 p-2 rounded-lg text-blue-300"><FiFileText /></div>
                                                 <div className="truncate text-sm text-white/80">{file.name}</div>
-                                            </div>
+                                            </a>
                                         ))}
                                     </div>
                                 </div>
                             )}
 
-                            {/* Comments */}
                             <div className="space-y-4 pt-4 border-t border-white/10">
                                 <h3 className="text-lg font-bold text-white/90 flex items-center gap-2"><FiActivity /> فعالیت‌ها</h3>
                                 <div className="flex gap-3">
@@ -494,9 +521,7 @@ const TaskDetailModal = ({ task, teamMembers, onClose, onUpdate, onDelete }:
                             </div>
                         </div>
 
-                        {/* Right Sidebar */}
                         <div className="w-full md:w-64 space-y-4 flex-shrink-0">
-                            {/* Members */}
                             <div className="relative">
                                 <button onClick={() => setShowUsers(!showUsers)} className="w-full flex items-center justify-between bg-white/5 hover:bg-white/10 text-white/90 py-3 px-4 rounded-lg text-sm transition border border-white/5">
                                     <div className="flex items-center gap-3"><FiUsers className="text-blue-400" /> {task.assigned_user_email || "تخصیص به عضو"}</div>
@@ -513,31 +538,33 @@ const TaskDetailModal = ({ task, teamMembers, onClose, onUpdate, onDelete }:
                                 )}
                             </div>
 
-                            {/* Calendar */}
                             <div className="relative group w-full">
-                                <div className="flex items-center justify-between bg-white/5 hover:bg-white/10 text-white/90 py-3 px-4 rounded-lg text-sm transition border border-white/5 cursor-pointer relative overflow-hidden">
-                                    <div className="flex items-center gap-3 z-0">
+                                <button 
+                                    onClick={() => datePickerRef.current?.openCalendar()}
+                                    className="w-full flex items-center justify-between bg-white/5 hover:bg-white/10 text-white/90 py-3 px-4 rounded-lg text-sm transition border border-white/5 cursor-pointer"
+                                >
+                                    <div className="flex items-center gap-3">
                                         <FiClock className="text-yellow-400" />
-                                        <span className="truncate text-xs">{task.due_date ? task.due_date : 'تاریخ سررسید'}</span>
+                                        <span className="truncate">{task.due_date ? task.due_date : 'تاریخ سررسید'}</span>
                                     </div>
-                                    <div className="absolute inset-0 z-10 opacity-0 cursor-pointer">
-                                        <DatePicker 
-                                            calendar={persian}
-                                            locale={persian_fa}
-                                            calendarPosition="bottom-right"
-                                            onChange={(date) => {
-                                                 if (date) onUpdate({ due_date: date.toString() });
-                                            }}
-                                            containerStyle={{ width: '100%', height: '100%' }}
-                                            style={{ width: '100%', height: '100%', cursor: 'pointer' }}
-                                        />
-                                    </div>
+                                </button>
+                                {/* تقویم مخفی که با دکمه بالا باز می‌شود */}
+                                <div className="absolute top-full right-0 z-50">
+                                    <DatePicker 
+                                        ref={datePickerRef}
+                                        calendar={persian}
+                                        locale={persian_fa}
+                                        onChange={(date) => {
+                                             if (date) onUpdate({ due_date: date.toString() });
+                                        }}
+                                        containerStyle={{ display: 'none' }} // مخفی کردن ورودی پیش‌فرض
+                                    />
                                 </div>
                             </div>
 
-                            {/* File Upload */}
                             <button onClick={() => fileInputRef.current?.click()} className="w-full flex items-center gap-3 bg-white/5 hover:bg-white/10 text-white/90 py-3 px-4 rounded-lg text-sm transition text-right group border border-white/5 hover:border-white/20">
-                                <FiUpload className="text-purple-400" /> پیوست فایل
+                                <FiUpload className="text-purple-400" /> 
+                                {uploading ? "در حال آپلود..." : "پیوست فایل"}
                             </button>
                             <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileUpload} />
 
