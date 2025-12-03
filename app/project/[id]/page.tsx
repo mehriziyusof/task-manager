@@ -4,12 +4,11 @@ import { supabase } from '@/lib/supabase';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { 
-  FiMessageSquare, FiFileText, FiDownload, FiUpload, 
-  FiUsers, FiClock, FiPlus, FiX, FiCheckSquare, FiActivity, FiChevronDown, FiCalendar, FiTrash2,
-  FiChevronLeft, FiChevronRight
+  FiFileText, FiDownload, FiUpload, FiUsers, FiClock, FiPlus, 
+  FiX, FiCheckSquare, FiActivity, FiChevronDown, FiCalendar, FiTrash2
 } from 'react-icons/fi';
 
-import DatePicker, { DateObject } from "react-multi-date-picker";
+import DatePicker from "react-multi-date-picker";
 import persian from "react-date-object/calendars/persian";
 import persian_fa from "react-date-object/locales/persian_fa";
 
@@ -73,7 +72,7 @@ export default function ProjectDetails() {
     const [error, setError] = useState<string | null>(null);
     const [selectedTask, setSelectedTask] = useState<Task | null>(null);
 
-    // --- Refs & State for Drag Scrolling ---
+    // --- Drag Scrolling State ---
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const [isDragging, setIsDragging] = useState(false);
     const [startX, setStartX] = useState(0);
@@ -111,6 +110,18 @@ export default function ProjectDetails() {
 
             const finalTasks: Task[] = (rawTasks || []).map((t: any) => {
                 const assignedUser = profiles?.find(p => p.id === t.assigned_to);
+                // اطمینان از اینکه checklist و attachments آرایه هستند (حتی اگر null باشند)
+                let parsedChecklist = [];
+                let parsedAttachments = [];
+                
+                try {
+                    parsedChecklist = typeof t.checklist === 'string' ? JSON.parse(t.checklist) : (t.checklist || []);
+                } catch(e) { parsedChecklist = [] }
+
+                try {
+                    parsedAttachments = typeof t.attachments === 'string' ? JSON.parse(t.attachments) : (t.attachments || []);
+                } catch(e) { parsedAttachments = [] }
+
                 return {
                     id: t.id,
                     title: t.title,
@@ -121,8 +132,8 @@ export default function ProjectDetails() {
                     due_date: t.due_date,
                     stage_id: t.stage_id,
                     stage_title: t.stage_id ? (stageTitleCache[t.stage_id] || 'سایر') : 'بدون مرحله',
-                    checklist: t.checklist || [], 
-                    attachments: t.attachments || []
+                    checklist: Array.isArray(parsedChecklist) ? parsedChecklist : [],
+                    attachments: Array.isArray(parsedAttachments) ? parsedAttachments : []
                 };
             });
             setTasks(finalTasks);
@@ -154,15 +165,6 @@ export default function ProjectDetails() {
         scrollContainerRef.current.scrollLeft = scrollLeft - walk;
     };
 
-    const scrollBoard = (direction: 'left' | 'right') => {
-        if (!scrollContainerRef.current) return;
-        const scrollAmount = 320;
-        scrollContainerRef.current.scrollBy({ 
-            left: direction === 'left' ? -scrollAmount : scrollAmount, 
-            behavior: 'smooth' 
-        });
-    };
-
     const handleAddTask = async (stageId: number, stageTitle: string) => {
         const tempTitle = "تسک جدید";
         try {
@@ -172,7 +174,9 @@ export default function ProjectDetails() {
                     project_id: projectId,
                     stage_id: stageId,
                     title: tempTitle,
-                    status: 'pending'
+                    status: 'pending',
+                    checklist: [], // مقداردهی اولیه
+                    attachments: [] // مقداردهی اولیه
                 })
                 .select()
                 .single();
@@ -223,7 +227,7 @@ export default function ProjectDetails() {
         }
 
         try {
-            const { checklist, attachments, stage_title, assigned_user_email, ...dbUpdates } = updates as any;
+            const { stage_title, assigned_user_email, ...dbUpdates } = updates as any;
             if (Object.keys(dbUpdates).length > 0) {
                 await supabase.from('project_tasks').update(dbUpdates).eq('id', taskId);
             }
@@ -266,15 +270,6 @@ export default function ProjectDetails() {
                         </button>
                     </Link>
                 </div>
-            </div>
-
-            <div className="absolute top-32 right-6 z-10 flex gap-2">
-                 <button onClick={() => scrollBoard('right')} className="bg-white/10 hover:bg-blue-500 p-2 rounded-full backdrop-blur-md transition border border-white/10">
-                    <FiChevronRight className="text-white" />
-                 </button>
-                 <button onClick={() => scrollBoard('left')} className="bg-white/10 hover:bg-blue-500 p-2 rounded-full backdrop-blur-md transition border border-white/10">
-                    <FiChevronLeft className="text-white" />
-                 </button>
             </div>
 
             <div 
@@ -362,9 +357,8 @@ const TaskDetailModal = ({ task, teamMembers, onClose, onUpdate, onDelete }:
     const [newChecklistTitle, setNewChecklistTitle] = useState("");
     const [commentText, setCommentText] = useState('');
     const [showUsers, setShowUsers] = useState(false);
-    const [uploading, setUploading] = useState(false); // استیت برای لودینگ آپلود
+    const [uploading, setUploading] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const datePickerRef = useRef<any>(null); // رفرنس برای تقویم
 
     const [mockComments, setMockComments] = useState<Comment[]>([{ id: 1, text: "تسک ایجاد شد.", user_name: "سیستم", created_at: "شروع" }]);
 
@@ -389,7 +383,6 @@ const TaskDetailModal = ({ task, teamMembers, onClose, onUpdate, onDelete }:
         onUpdate({ checklist: newChecklist });
     };
 
-    // --- Real File Upload ---
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!e.target.files || e.target.files.length === 0) return;
         setUploading(true);
@@ -399,27 +392,24 @@ const TaskDetailModal = ({ task, teamMembers, onClose, onUpdate, onDelete }:
         const filePath = `${fileName}`;
 
         try {
-            // 1. Upload to Supabase Storage
             const { error: uploadError } = await supabase.storage
-                .from('task-attachments') // مطمئن شوید باکتی با این نام ساخته‌اید
+                .from('task-attachments')
                 .upload(filePath, file);
 
             if (uploadError) throw uploadError;
 
-            // 2. Get Public URL
             const { data: { publicUrl } } = supabase.storage
                 .from('task-attachments')
                 .getPublicUrl(filePath);
 
-            // 3. Update Task Data
             const newAttachment = { name: file.name, url: publicUrl, type: fileExt || 'file' };
             const newAttachments = [...(task.attachments || []), newAttachment];
             onUpdate({ attachments: newAttachments });
-            alert("فایل با موفقیت آپلود شد!");
+            alert("فایل آپلود و ذخیره شد!");
 
         } catch (error: any) {
             console.error('Upload error:', error);
-            alert('خطا در آپلود فایل: ' + error.message);
+            alert('خطا در آپلود: ' + error.message);
         } finally {
             setUploading(false);
         }
@@ -430,6 +420,21 @@ const TaskDetailModal = ({ task, teamMembers, onClose, onUpdate, onDelete }:
         setMockComments([...mockComments, { id: Date.now(), text: commentText, user_name: "شما", created_at: "الان" }]);
         setCommentText('');
     };
+
+    const cycleStatus = () => {
+        const statuses: TaskStatus[] = ['pending', 'in_progress', 'completed', 'blocked'];
+        const currentIndex = statuses.indexOf(task.status);
+        const nextStatus = statuses[(currentIndex + 1) % statuses.length];
+        onUpdate({ status: nextStatus });
+    };
+
+    const statusMap = {
+        'pending': { color: 'bg-gray-600/50 text-gray-200 border-gray-500', label: 'شروع نشده' },
+        'in_progress': { color: 'bg-blue-600/50 text-blue-200 border-blue-500', label: 'در حال انجام' },
+        'completed': { color: 'bg-green-600/50 text-green-200 border-green-500', label: 'تکمیل شده' },
+        'blocked': { color: 'bg-red-600/50 text-red-200 border-red-500', label: 'متوقف شده' },
+    };
+    const currentStatusUI = statusMap[task.status] || statusMap['pending'];
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xl animate-fade-in" onClick={onClose}>
@@ -443,16 +448,12 @@ const TaskDetailModal = ({ task, teamMembers, onClose, onUpdate, onDelete }:
                     <div className="space-y-2">
                         <div className="flex gap-2 items-center">
                             <span className="bg-black/60 backdrop-blur-md text-xs px-3 py-1 rounded-full text-blue-300 border border-white/10">{task.stage_title}</span>
-                            <select 
-                                value={task.status} 
-                                onChange={(e) => onUpdate({ status: e.target.value as TaskStatus })} 
-                                className="bg-black/60 backdrop-blur-md text-xs px-2 py-1 rounded-full border border-white/10 text-white focus:outline-none cursor-pointer"
+                            <button 
+                                onClick={cycleStatus}
+                                className={`backdrop-blur-md text-xs px-3 py-1 rounded-full border transition hover:scale-105 active:scale-95 ${currentStatusUI.color}`}
                             >
-                                <option value="pending">شروع نشده</option>
-                                <option value="in_progress">در حال انجام</option>
-                                <option value="completed">تکمیل شده</option>
-                                <option value="blocked">متوقف شده</option>
-                            </select>
+                                {currentStatusUI.label}
+                            </button>
                         </div>
                         <input 
                             value={task.title}
@@ -495,9 +496,9 @@ const TaskDetailModal = ({ task, teamMembers, onClose, onUpdate, onDelete }:
                                     <h3 className="text-lg font-bold text-white/90 flex items-center gap-2"><FiDownload /> فایل‌ها</h3>
                                     <div className="grid grid-cols-2 gap-2">
                                         {task.attachments.map((file, idx) => (
-                                            <a key={idx} href={file.url} target="_blank" rel="noreferrer" className="bg-white/5 p-3 rounded-xl border border-white/10 flex items-center gap-3 hover:bg-white/10 transition cursor-pointer">
+                                            <a key={idx} href={file.url} target="_blank" rel="noreferrer" className="bg-white/5 p-3 rounded-xl border border-white/10 flex items-center gap-3 hover:bg-white/10 transition cursor-pointer group">
                                                 <div className="bg-blue-500/20 p-2 rounded-lg text-blue-300"><FiFileText /></div>
-                                                <div className="truncate text-sm text-white/80">{file.name}</div>
+                                                <div className="truncate text-sm text-white/80 group-hover:text-white transition">{file.name}</div>
                                             </a>
                                         ))}
                                     </div>
@@ -538,28 +539,35 @@ const TaskDetailModal = ({ task, teamMembers, onClose, onUpdate, onDelete }:
                                 )}
                             </div>
 
+                         {/* Range DatePicker Fix */}
                             <div className="relative group w-full">
-                                <button 
-                                    onClick={() => datePickerRef.current?.openCalendar()}
-                                    className="w-full flex items-center justify-between bg-white/5 hover:bg-white/10 text-white/90 py-3 px-4 rounded-lg text-sm transition border border-white/5 cursor-pointer"
-                                >
-                                    <div className="flex items-center gap-3">
-                                        <FiClock className="text-yellow-400" />
-                                        <span className="truncate">{task.due_date ? task.due_date : 'تاریخ سررسید'}</span>
-                                    </div>
-                                </button>
-                                {/* تقویم مخفی که با دکمه بالا باز می‌شود */}
-                                <div className="absolute top-full right-0 z-50">
-                                    <DatePicker 
-                                        ref={datePickerRef}
-                                        calendar={persian}
-                                        locale={persian_fa}
-                                        onChange={(date) => {
-                                             if (date) onUpdate({ due_date: date.toString() });
-                                        }}
-                                        containerStyle={{ display: 'none' }} // مخفی کردن ورودی پیش‌فرض
-                                    />
-                                </div>
+                                <DatePicker 
+                                    calendar={persian}
+                                    locale={persian_fa}
+                                    range
+                                    rangeHover
+                                    onChange={(dateObjects: any) => { // <--- اینجا تغییر کرد: اضافه کردن : any
+                                        if (Array.isArray(dateObjects)) {
+                                            const dateString = dateObjects.map((d: any) => d.toString()).join(' - ');
+                                            onUpdate({ due_date: dateString });
+                                        } else if (dateObjects) {
+                                            onUpdate({ due_date: dateObjects.toString() });
+                                        }
+                                    }}
+                                    render={(value: any, openCalendar: any) => ( // <--- اینجا هم برای اطمینان any اضافه شد
+                                        <button 
+                                            onClick={openCalendar}
+                                            className="w-full flex items-center justify-between bg-white/5 hover:bg-white/10 text-white/90 py-3 px-4 rounded-lg text-sm transition border border-white/5 cursor-pointer"
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                <FiClock className="text-yellow-400" />
+                                                <span className="truncate">
+                                                    {task.due_date ? task.due_date : 'تاریخ سررسید'}
+                                                </span>
+                                            </div>
+                                        </button>
+                                    )}
+                                />
                             </div>
 
                             <button onClick={() => fileInputRef.current?.click()} className="w-full flex items-center gap-3 bg-white/5 hover:bg-white/10 text-white/90 py-3 px-4 rounded-lg text-sm transition text-right group border border-white/5 hover:border-white/20">
