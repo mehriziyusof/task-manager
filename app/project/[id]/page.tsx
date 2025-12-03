@@ -172,7 +172,7 @@ export default function ProjectDetails() {
         }
     };
 
-    // --- Add New Stage Function (Fixed) ---
+    // --- Add New Stage ---
     const handleAddStage = async () => {
         if (!newStageTitle.trim() || !project) return;
         try {
@@ -181,7 +181,7 @@ export default function ProjectDetails() {
                 process_id: project.process_id,
                 title: newStageTitle,
                 sort_order: lastOrder + 1,
-                order_index: lastOrder + 1 // ✅ اضافه شد برای رفع ارور دیتابیس
+                order_index: lastOrder + 1 
             }).select().single();
 
             if (error) throw error;
@@ -191,6 +191,24 @@ export default function ProjectDetails() {
             toast.success('ستون جدید اضافه شد');
         } catch (err: any) {
             toast.error("خطا در ساخت ستون: " + err.message);
+        }
+    };
+
+    // --- Delete Stage ---
+    const handleDeleteStage = async (stageId: number) => {
+        if (!confirm("آیا از حذف این ستون و تمام تسک‌های داخل آن اطمینان دارید؟")) return;
+        try {
+            // 1. حذف تسک‌های ستون
+            await supabase.from('project_tasks').delete().eq('stage_id', stageId);
+            // 2. حذف خود ستون
+            const { error } = await supabase.from('stages').delete().eq('id', stageId);
+            
+            if (error) throw error;
+            
+            setStages(prev => prev.filter(s => s.id !== stageId));
+            toast.success("ستون با موفقیت حذف شد");
+        } catch (err: any) {
+            toast.error("خطا در حذف ستون: " + err.message);
         }
     };
 
@@ -244,6 +262,7 @@ export default function ProjectDetails() {
 
     return (
         <div className="p-6 md:p-10 text-white pb-20 relative min-h-screen flex flex-col">
+            {/* Header */}
             <div className="flex justify-between items-center mb-8 border-b border-white/10 pb-6 flex-shrink-0">
                 <div>
                     <h1 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400 mb-1">{project.title}</h1>
@@ -255,6 +274,7 @@ export default function ProjectDetails() {
                 </div>
             </div>
 
+            {/* Kanban Board */}
             <div 
                 ref={scrollContainerRef}
                 onMouseDown={handleMouseDown}
@@ -268,10 +288,21 @@ export default function ProjectDetails() {
                     return (
                         <div key={stage.id} className="min-w-[300px] w-[300px] flex-shrink-0 h-full max-h-[calc(100vh-220px)] flex flex-col">
                             <div className="bg-[#121212]/60 backdrop-blur-sm rounded-xl border border-white/5 h-full flex flex-col shadow-lg">
-                                <div className="p-4 border-b border-white/5 flex justify-between items-center bg-white/5 rounded-t-xl">
-                                    <h3 className="font-bold text-blue-100 text-sm">{stage.title}</h3>
-                                    <span className="bg-black/40 text-xs px-2 py-1 rounded-full text-white/60 font-mono">{stageTasks.length}</span>
+                                {/* Stage Header with Delete */}
+                                <div className="p-4 border-b border-white/5 flex justify-between items-center bg-white/5 rounded-t-xl group">
+                                    <div className="flex items-center gap-2">
+                                        <h3 className="font-bold text-blue-100 text-sm">{stage.title}</h3>
+                                        <span className="bg-black/40 text-xs px-2 py-1 rounded-full text-white/60 font-mono">{stageTasks.length}</span>
+                                    </div>
+                                    <button 
+                                        onClick={(e) => { e.stopPropagation(); handleDeleteStage(stage.id); }}
+                                        className="text-white/20 hover:text-red-400 opacity-0 group-hover:opacity-100 transition p-1"
+                                        title="حذف ستون"
+                                    >
+                                        <FiTrash2 size={14} />
+                                    </button>
                                 </div>
+
                                 <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-3">
                                     {stageTasks.map(task => (
                                         <div 
@@ -301,6 +332,7 @@ export default function ProjectDetails() {
                     );
                 })}
 
+                {/* Add New Stage Column */}
                 <div className="min-w-[300px] w-[300px] flex-shrink-0 h-full max-h-[calc(100vh-220px)] flex flex-col justify-start">
                     {!isAddingStage ? (
                         <button onClick={() => setIsAddingStage(true)} className="bg-white/5 hover:bg-white/10 border border-white/10 border-dashed rounded-xl h-14 flex items-center justify-center gap-2 text-white/50 transition"><FiPlus /> افزودن ستون جدید</button>
@@ -497,23 +529,29 @@ const TaskDetailModal = ({ task, teamMembers, onClose, onUpdate, onDelete }: any
 
                             <div className="relative group w-full">
                                 <DatePicker 
-                                    value={task.due_date || ""} 
+                                    value={task.due_date as any} 
                                     calendar={persian}
                                     locale={persian_fa}
                                     format="YYYY/MM/DD"
                                     range
                                     rangeHover
                                     onChange={(dateObjects: any) => {
-                                        if (!dateObjects) { onUpdate({ due_date: null }); return; }
+                                        if (!dateObjects) {
+                                            onUpdate({ due_date: null });
+                                            return;
+                                        }
                                         let finalDateString = "";
-                                        if (Array.isArray(dateObjects)) finalDateString = dateObjects.map((d: any) => d.format("YYYY/MM/DD")).join(' - ');
-                                        else finalDateString = dateObjects.format("YYYY/MM/DD");
+                                        if (Array.isArray(dateObjects)) {
+                                            finalDateString = dateObjects.map((d: any) => d.format("YYYY/MM/DD")).join(' - ');
+                                        } else {
+                                            finalDateString = dateObjects.format("YYYY/MM/DD");
+                                        }
                                         onUpdate({ due_date: finalDateString });
                                     }}
                                     render={(value: any, openCalendar: any) => (
                                         <button onClick={openCalendar} className="w-full flex items-center justify-between bg-white/5 hover:bg-white/10 text-white/90 py-3 px-4 rounded-lg text-sm transition border border-white/5 cursor-pointer">
                                             <div className="flex items-center gap-3">
-                                                <FiClock className={`text-lg ${task.due_date ? 'text-yellow-400' : 'text-white/40'}`} />
+                                                <FiClock className={`text-lg ${task.due_date ? 'text-blue-400' : 'text-white/40'}`} />
                                                 <span className={`truncate ${task.due_date ? 'text-white' : 'text-white/40'}`}>{task.due_date ? task.due_date : 'انتخاب تاریخ...'}</span>
                                             </div>
                                         </button>
