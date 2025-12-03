@@ -9,11 +9,12 @@ export default function PomodoroTimer() {
     const [mode, setMode] = useState<'work' | 'break'>('work');
     const [isMinimized, setIsMinimized] = useState(false);
     
-    // پوزیشن اولیه (فاصله از راست و پایین)
+    // Position & Drag
     const [position, setPosition] = useState({ x: 20, y: 20 }); 
     const [isDragging, setIsDragging] = useState(false);
+    const dragStartTime = useRef<number>(0); // برای تشخیص کلیک واقعی
     
-    // Task Linking
+    // Task Data
     const [myTasks, setMyTasks] = useState<{id: number, title: string}[]>([]);
     const [selectedTask, setSelectedTask] = useState<string | null>(null);
     const [showTaskSelector, setShowTaskSelector] = useState(false);
@@ -42,19 +43,32 @@ export default function PomodoroTimer() {
         return () => clearInterval(interval);
     }, [isActive, timeLeft, mode]);
 
-    // Drag Logic (Universal)
-    const dragRef = useRef<HTMLDivElement>(null);
-    const buttonDragRef = useRef<HTMLButtonElement>(null);
-
+    // --- Drag Logic ---
     useEffect(() => {
         const handleMouseMove = (e: MouseEvent) => {
             if (!isDragging) return;
-            setPosition(prev => ({
-                x: prev.x - e.movementX,
-                y: prev.y - e.movementY
-            }));
+            
+            setPosition(prev => {
+                let newX = prev.x - e.movementX;
+                let newY = prev.y - e.movementY;
+
+                // محدودیت صفحه (Boundary Check)
+                const maxX = window.innerWidth - 70;
+                const maxY = window.innerHeight - 70;
+
+                if (newX < 10) newX = 10;
+                if (newX > maxX) newX = maxX;
+                if (newY < 10) newY = 10;
+                if (newY > maxY) newY = maxY;
+
+                return { x: newX, y: newY };
+            });
         };
-        const handleMouseUp = () => setIsDragging(false);
+
+        const handleMouseUp = () => {
+            setIsDragging(false);
+        };
+
         if (isDragging) {
             window.addEventListener('mousemove', handleMouseMove);
             window.addEventListener('mouseup', handleMouseUp);
@@ -71,18 +85,28 @@ export default function PomodoroTimer() {
         return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
     };
 
-    const adjustTime = (amount: number) => {
-        setTimeLeft(prev => Math.max(60, prev + amount));
+    const adjustTime = (amount: number) => setTimeLeft(prev => Math.max(60, prev + amount));
+
+    const handleIconMouseDown = (e: React.MouseEvent) => {
+        e.preventDefault();
+        setIsDragging(true);
+        dragStartTime.current = Date.now();
+    };
+
+    const handleIconClick = () => {
+        // اگر زمان درگ کمتر از 200 میلی‌ثانیه بود، یعنی کلیک بوده
+        if (Date.now() - dragStartTime.current < 200) {
+            setIsMinimized(false);
+        }
     };
 
     if (isMinimized) {
         return (
             <button 
-                ref={buttonDragRef}
-                onMouseDown={(e) => { e.stopPropagation(); setIsDragging(true); }}
-                onClick={(e) => { if(!isDragging) setIsMinimized(false); }}
+                onMouseDown={handleIconMouseDown}
+                onClick={handleIconClick}
                 style={{ right: `${position.x}px`, bottom: `${position.y}px`, cursor: isDragging ? 'grabbing' : 'grab' }}
-                className="fixed z-50 w-14 h-14 bg-gradient-to-tr from-purple-600 to-blue-600 rounded-full flex items-center justify-center shadow-2xl hover:scale-105 transition animate-bounce-slow"
+                className="fixed z-50 w-14 h-14 bg-gradient-to-tr from-purple-600 to-blue-600 rounded-full flex items-center justify-center shadow-2xl hover:scale-105 transition active:scale-95"
             >
                 <FiClock className="text-white text-xl" />
             </button>
@@ -91,27 +115,21 @@ export default function PomodoroTimer() {
 
     return (
         <div 
-            ref={dragRef}
             style={{ right: `${position.x}px`, bottom: `${position.y}px` }}
             className="fixed z-50 w-72 glass border border-white/10 rounded-3xl shadow-2xl overflow-hidden animate-slide-up flex flex-col"
         >
-            {/* Header / Drag Handle */}
             <div 
-                onMouseDown={() => setIsDragging(true)}
+                onMouseDown={(e) => { e.preventDefault(); setIsDragging(true); }}
                 className={`h-8 w-full ${mode === 'work' ? 'bg-blue-600' : 'bg-green-600'} cursor-move flex items-center justify-between px-3`}
             >
                 <div className="flex items-center gap-2">
                     <FiMove className="text-white/70" size={14} />
-                    <span className="text-[10px] text-white font-bold tracking-wider uppercase">
-                        {mode === 'work' ? 'Work Mode' : 'Break Mode'}
-                    </span>
+                    <span className="text-[10px] text-white font-bold tracking-wider uppercase">{mode === 'work' ? 'Work Mode' : 'Break Mode'}</span>
                 </div>
                 <button onClick={() => setIsMinimized(true)} className="text-white/70 hover:text-white font-bold text-xs">-</button>
             </div>
             
             <div className="p-5 bg-[#0a0a0a]/95 backdrop-blur-xl relative">
-                
-                {/* Task Selector */}
                 <div className="mb-4 relative">
                      <button onClick={() => setShowTaskSelector(!showTaskSelector)} className="w-full bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg p-2 flex items-center gap-2 text-xs text-white/80 transition">
                         <FiCheckCircle className={selectedTask ? "text-blue-400" : "text-white/30"} />
@@ -130,27 +148,17 @@ export default function PomodoroTimer() {
                      )}
                 </div>
 
-                {/* Timer Display */}
                 <div className="flex items-center justify-between mb-6 px-2">
                     <button onClick={() => adjustTime(-60)} className="text-white/30 hover:text-white transition"><FiMinus size={18}/></button>
-                    <div className="text-5xl font-mono font-bold text-center text-white tracking-widest drop-shadow-lg">
-                        {formatTime(timeLeft)}
-                    </div>
+                    <div className="text-5xl font-mono font-bold text-center text-white tracking-widest drop-shadow-lg">{formatTime(timeLeft)}</div>
                     <button onClick={() => adjustTime(60)} className="text-white/30 hover:text-white transition"><FiPlus size={18}/></button>
                 </div>
 
-                {/* Controls */}
                 <div className="flex justify-center gap-4">
-                    <button 
-                        onClick={() => setIsActive(!isActive)}
-                        className={`w-14 h-14 rounded-full flex items-center justify-center transition shadow-lg shadow-white/5 ${isActive ? 'bg-yellow-500 text-black hover:bg-yellow-400' : 'bg-white text-black hover:bg-gray-200'}`}
-                    >
+                    <button onClick={() => setIsActive(!isActive)} className={`w-14 h-14 rounded-full flex items-center justify-center transition shadow-lg shadow-white/5 ${isActive ? 'bg-yellow-500 text-black hover:bg-yellow-400' : 'bg-white text-black hover:bg-gray-200'}`}>
                         {isActive ? <FiPause size={24} /> : <FiPlay size={24} className="ml-1" />}
                     </button>
-                    <button 
-                        onClick={() => { setIsActive(false); setTimeLeft(mode === 'work' ? 25*60 : 5*60); }}
-                        className="w-14 h-14 rounded-full bg-white/10 text-white flex items-center justify-center hover:bg-white/20 transition border border-white/5"
-                    >
+                    <button onClick={() => { setIsActive(false); setTimeLeft(mode === 'work' ? 25*60 : 5*60); }} className="w-14 h-14 rounded-full bg-white/10 text-white flex items-center justify-center hover:bg-white/20 transition border border-white/5">
                         <FiRefreshCw size={20} />
                     </button>
                 </div>

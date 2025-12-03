@@ -172,7 +172,7 @@ export default function ProjectDetails() {
         }
     };
 
-    // --- Add New Stage Function ---
+    // --- Add New Stage Function (Fixed) ---
     const handleAddStage = async () => {
         if (!newStageTitle.trim() || !project) return;
         try {
@@ -180,7 +180,8 @@ export default function ProjectDetails() {
             const { data, error } = await supabase.from('stages').insert({
                 process_id: project.process_id,
                 title: newStageTitle,
-                sort_order: lastOrder + 1
+                sort_order: lastOrder + 1,
+                order_index: lastOrder + 1 // ✅ اضافه شد برای رفع ارور دیتابیس
             }).select().single();
 
             if (error) throw error;
@@ -194,7 +195,6 @@ export default function ProjectDetails() {
     };
 
     const updateTask = async (taskId: number, updates: Partial<Task>) => {
-        // Optimistic Update
         setTasks(prev => prev.map(t => {
             if (t.id !== taskId) return t;
             let newUserEmail = t.assigned_user_email;
@@ -244,7 +244,6 @@ export default function ProjectDetails() {
 
     return (
         <div className="p-6 md:p-10 text-white pb-20 relative min-h-screen flex flex-col">
-            {/* Header */}
             <div className="flex justify-between items-center mb-8 border-b border-white/10 pb-6 flex-shrink-0">
                 <div>
                     <h1 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400 mb-1">{project.title}</h1>
@@ -256,7 +255,6 @@ export default function ProjectDetails() {
                 </div>
             </div>
 
-            {/* Kanban Board */}
             <div 
                 ref={scrollContainerRef}
                 onMouseDown={handleMouseDown}
@@ -303,21 +301,15 @@ export default function ProjectDetails() {
                     );
                 })}
 
-                {/* Add New Stage Column */}
                 <div className="min-w-[300px] w-[300px] flex-shrink-0 h-full max-h-[calc(100vh-220px)] flex flex-col justify-start">
                     {!isAddingStage ? (
-                        <button 
-                            onClick={() => setIsAddingStage(true)}
-                            className="bg-white/5 hover:bg-white/10 border border-white/10 border-dashed rounded-xl h-14 flex items-center justify-center gap-2 text-white/50 transition"
-                        >
-                            <FiPlus /> افزودن ستون جدید
-                        </button>
+                        <button onClick={() => setIsAddingStage(true)} className="bg-white/5 hover:bg-white/10 border border-white/10 border-dashed rounded-xl h-14 flex items-center justify-center gap-2 text-white/50 transition"><FiPlus /> افزودن ستون جدید</button>
                     ) : (
                         <div className="bg-[#121212]/90 border border-white/10 rounded-xl p-3 animate-fade-in">
                             <input 
                                 autoFocus
                                 className="w-full bg-black/40 border border-white/10 rounded-lg p-2 text-sm text-white mb-2 focus:border-blue-500 outline-none"
-                                placeholder="نام ستون (مثلاً: تست نهایی)..."
+                                placeholder="نام ستون..."
                                 value={newStageTitle}
                                 onChange={(e) => setNewStageTitle(e.target.value)}
                                 onKeyDown={(e) => e.key === 'Enter' && handleAddStage()}
@@ -330,13 +322,12 @@ export default function ProjectDetails() {
                     )}
                 </div>
             </div>
-{/* Modal */}
+
             {selectedTask && (
                 <TaskDetailModal 
                     task={selectedTask} 
                     teamMembers={teamMembers} 
                     onClose={() => setSelectedTask(null)}
-                    // اصلاح شده: اضافه کردن شرط یا ! برای رفع ارور احتمالی نال بودن
                     onUpdate={(updates: any) => selectedTask && updateTask(selectedTask.id, updates)}
                     onDelete={() => selectedTask && handleDeleteTask(selectedTask.id)}
                 />
@@ -345,7 +336,6 @@ export default function ProjectDetails() {
     );
 }
 
-// --- Helpers ---
 const StatusBadge = ({ status }: { status: TaskStatus }) => {
     const map = {
         'pending': { color: 'bg-gray-500/20 text-gray-300', label: 'شروع نشده' },
@@ -374,16 +364,13 @@ const TaskDetailModal = ({ task, teamMembers, onClose, onUpdate, onDelete }: any
         if (!newChecklistTitle.trim()) return;
         const newItem = { id: Date.now(), title: newChecklistTitle, is_checked: false };
         const safeChecklist = Array.isArray(task.checklist) ? task.checklist : [];
-        const newChecklist = [...safeChecklist, newItem];
-        onUpdate({ checklist: newChecklist });
+        onUpdate({ checklist: [...safeChecklist, newItem] });
         setNewChecklistTitle("");
     };
 
     const toggleChecklist = (itemId: number) => {
         const safeChecklist = Array.isArray(task.checklist) ? task.checklist : [];
-        const newChecklist = safeChecklist.map((item: any) => 
-            item.id === itemId ? { ...item, is_checked: !item.is_checked } : item
-        );
+        const newChecklist = safeChecklist.map((item: any) => item.id === itemId ? { ...item, is_checked: !item.is_checked } : item);
         onUpdate({ checklist: newChecklist });
     };
 
@@ -517,16 +504,10 @@ const TaskDetailModal = ({ task, teamMembers, onClose, onUpdate, onDelete }: any
                                     range
                                     rangeHover
                                     onChange={(dateObjects: any) => {
-                                        if (!dateObjects) {
-                                            onUpdate({ due_date: null });
-                                            return;
-                                        }
+                                        if (!dateObjects) { onUpdate({ due_date: null }); return; }
                                         let finalDateString = "";
-                                        if (Array.isArray(dateObjects)) {
-                                            finalDateString = dateObjects.map((d: any) => d.format("YYYY/MM/DD")).join(' - ');
-                                        } else {
-                                            finalDateString = dateObjects.format("YYYY/MM/DD");
-                                        }
+                                        if (Array.isArray(dateObjects)) finalDateString = dateObjects.map((d: any) => d.format("YYYY/MM/DD")).join(' - ');
+                                        else finalDateString = dateObjects.format("YYYY/MM/DD");
                                         onUpdate({ due_date: finalDateString });
                                     }}
                                     render={(value: any, openCalendar: any) => (
