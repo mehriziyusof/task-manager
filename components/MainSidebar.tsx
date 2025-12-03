@@ -3,7 +3,6 @@ import React from 'react';
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-// اضافه شدن FiPieChart به ایمپورت‌ها
 import { FiHome, FiUsers, FiCalendar, FiUser, FiLogOut, FiPieChart } from "react-icons/fi";
 
 export default function MainSidebar() {
@@ -22,6 +21,15 @@ export default function MainSidebar() {
 
   const isActive = (path: string) => pathname === path;
 
+  const menuItems = [
+      // داشبورد آمد اول لیست
+      { name: 'داشبورد مدیریتی', icon: FiPieChart, href: '/dashboard' }, 
+      { name: 'میز کار من', icon: FiHome, href: '/' },
+      { name: 'تقویم', icon: FiCalendar, href: '/calendar' },
+      { name: 'اعضای تیم', icon: FiUsers, href: '/team' },
+      { name: 'پروفایل من', icon: FiUser, href: '/profile' },
+  ];
+
   return (
     <aside className="hidden md:flex flex-col w-72 h-full flex-shrink-0">
       <div className="glass w-full h-full rounded-3xl p-6 flex flex-col justify-between">
@@ -33,25 +41,25 @@ export default function MainSidebar() {
               <span className="text-xs text-white/50">ورژن ۲.۰</span>
             </div>
           </div>
-          
-          <nav className="space-y-3">
-            <SidebarLink href="/" icon={<FiHome />} label="میز کار من" active={isActive('/')} />
-            
-            {/* اضافه شدن لینک داشبورد */}
-            <SidebarLink href="/dashboard" icon={<FiPieChart />} label="داشبورد" active={isActive('/dashboard')} />
-            
-            <SidebarLink href="/team" icon={<FiUsers />} label="اعضای تیم" active={isActive('/team')} />
-            <SidebarLink href="/calendar" icon={<FiCalendar />} label="تقویم" active={isActive('/calendar')} />
-            <SidebarLink href="/profile" icon={<FiUser />} label="پروفایل من" active={isActive('/profile')} />
+<nav className="space-y-3">
+            {menuItems.map((item) => (
+                <SidebarLink 
+                    key={item.href} 
+                    href={item.href}
+                    // اینجا name را به label تبدیل می‌کنیم
+                    label={item.name} 
+                    // اینجا آیکون را رندر می‌کنیم تا خطا ندهد
+                    icon={<item.icon size={20} />} 
+                    active={isActive(item.href)} 
+                />
+            ))}
           </nav>
         </div>
-
         <div className="space-y-4">
             <button onClick={handleLogout} className="w-full flex items-center gap-4 p-3.5 rounded-2xl text-red-300 hover:bg-red-500/10 hover:text-red-400 transition-all duration-200 group border border-transparent hover:border-red-500/20">
                 <span className="text-xl"><FiLogOut /></span>
                 <span className="font-medium text-sm">خروج از حساب</span>
             </button>
-            
             <div className="glass-hover p-4 rounded-2xl border border-white/5 relative overflow-hidden group cursor-pointer">
                 <div className="absolute top-0 right-0 w-24 h-24 bg-purple-500/20 blur-2xl -mr-10 -mt-10 group-hover:bg-purple-500/30 transition-all" />
                 <p className="text-xs text-white/60 mb-1 relative z-10">پلن فعلی شما</p>
@@ -67,7 +75,6 @@ export default function MainSidebar() {
 }
 
 interface SidebarLinkProps { href: string; icon: React.ReactNode; label: string; active?: boolean; }
-
 function SidebarLink({ href, icon, label, active = false }: SidebarLinkProps) {
   return (
     <Link href={href} className={`flex items-center gap-4 p-3.5 rounded-2xl transition-all duration-200 group ${active ? "bg-white/10 text-white border border-white/10 shadow-lg" : "text-white/70 hover:bg-white/5 hover:text-white border border-transparent hover:border-white/5"}`}>

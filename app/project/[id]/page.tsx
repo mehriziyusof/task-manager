@@ -195,20 +195,36 @@ export default function ProjectDetails() {
     };
 
     // --- Delete Stage ---
-    const handleDeleteStage = async (stageId: number) => {
-        if (!confirm("آیا از حذف این ستون و تمام تسک‌های داخل آن اطمینان دارید؟")) return;
+const handleDeleteStage = (stageId: number) => {
+        toast((t) => (
+            <div className="flex flex-col gap-3 min-w-[250px]">
+                <p className="font-bold text-sm">حذف ستون؟</p>
+                <span className="text-xs text-white/70">تمام تسک‌های داخل این ستون هم پاک می‌شوند!</span>
+                <div className="flex gap-2 justify-end mt-1">
+                    <button onClick={() => toast.dismiss(t.id)} className="px-3 py-1.5 text-xs bg-white/10 hover:bg-white/20 rounded transition">لغو</button>
+                    <button 
+                        onClick={async () => {
+                            toast.dismiss(t.id);
+                            await performStageDelete(stageId);
+                        }} 
+                        className="px-3 py-1.5 text-xs bg-red-600 hover:bg-red-500 rounded text-white transition"
+                    >
+                        حذف کن
+                    </button>
+                </div>
+            </div>
+        ), { duration: 6000, style: { background: '#1a1a2e', color: '#fff', border: '1px solid #333' } });
+    };
+
+    const performStageDelete = async (stageId: number) => {
         try {
-            // 1. حذف تسک‌های ستون
             await supabase.from('project_tasks').delete().eq('stage_id', stageId);
-            // 2. حذف خود ستون
             const { error } = await supabase.from('stages').delete().eq('id', stageId);
-            
             if (error) throw error;
-            
             setStages(prev => prev.filter(s => s.id !== stageId));
-            toast.success("ستون با موفقیت حذف شد");
+            toast.success("ستون حذف شد");
         } catch (err: any) {
-            toast.error("خطا در حذف ستون: " + err.message);
+            toast.error("خطا: " + err.message);
         }
     };
 
