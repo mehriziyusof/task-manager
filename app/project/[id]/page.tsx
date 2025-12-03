@@ -83,12 +83,14 @@ export default function ProjectDetails() {
         setLoading(true);
         setError(null);
         try {
+            // 1. دریافت پروژه
             const { data: projectData, error: projError } = await supabase
                 .from('projects').select('*').eq('id', projectId).single();
             
             if (projError || !projectData) throw new Error('پروژه پیدا نشد.');
             setProject(projectData);
 
+            // 2. دریافت مراحل (Stages)
             const { data: stagesData } = await supabase
                 .from('stages')
                 .select('id, title, sort_order')
@@ -100,9 +102,11 @@ export default function ProjectDetails() {
                 stagesData.forEach(s => stageTitleCache[s.id] = s.title);
             }
 
+            // 3. دریافت اعضا
             const { data: profiles } = await supabase.from('profiles').select('id, email, full_name, role');
             if (profiles) setTeamMembers(profiles);
 
+            // 4. دریافت تسک‌ها
             const { data: rawTasks, error: taskError } = await supabase
                 .from('project_tasks').select('*').eq('project_id', projectId);
             
@@ -110,7 +114,8 @@ export default function ProjectDetails() {
 
             const finalTasks: Task[] = (rawTasks || []).map((t: any) => {
                 const assignedUser = profiles?.find(p => p.id === t.assigned_to);
-                // اطمینان از اینکه checklist و attachments آرایه هستند (حتی اگر null باشند)
+                
+                // پارس کردن ایمن JSON برای چک‌لیست و فایل‌ها
                 let parsedChecklist = [];
                 let parsedAttachments = [];
                 
@@ -165,6 +170,7 @@ export default function ProjectDetails() {
         scrollContainerRef.current.scrollLeft = scrollLeft - walk;
     };
 
+    // --- Task Actions ---
     const handleAddTask = async (stageId: number, stageTitle: string) => {
         const tempTitle = "تسک جدید";
         try {
@@ -175,8 +181,8 @@ export default function ProjectDetails() {
                     stage_id: stageId,
                     title: tempTitle,
                     status: 'pending',
-                    checklist: [], // مقداردهی اولیه
-                    attachments: [] // مقداردهی اولیه
+                    checklist: [], 
+                    attachments: [] 
                 })
                 .select()
                 .single();
@@ -204,6 +210,7 @@ export default function ProjectDetails() {
     };
 
     const updateTask = async (taskId: number, updates: Partial<Task>) => {
+        // آپدیت Local State
         setTasks(prev => prev.map(t => {
             if (t.id !== taskId) return t;
             let newUserEmail = t.assigned_user_email;
@@ -214,6 +221,7 @@ export default function ProjectDetails() {
             return { ...t, ...updates, assigned_user_email: newUserEmail };
         }));
 
+        // آپدیت Selected Task State
         if (selectedTask?.id === taskId) {
             setSelectedTask(prev => {
                 if (!prev) return null;
@@ -226,8 +234,11 @@ export default function ProjectDetails() {
             });
         }
 
+        // آپدیت Database
         try {
+            // جدا کردن فیلدهایی که در دیتابیس نیستند
             const { stage_title, assigned_user_email, ...dbUpdates } = updates as any;
+            
             if (Object.keys(dbUpdates).length > 0) {
                 await supabase.from('project_tasks').update(dbUpdates).eq('id', taskId);
             }
@@ -249,6 +260,7 @@ export default function ProjectDetails() {
 
     return (
         <div className="p-6 md:p-10 text-white pb-20 relative min-h-screen flex flex-col">
+            {/* Header */}
             <div className="flex justify-between items-center mb-8 border-b border-white/10 pb-6 flex-shrink-0">
                 <div>
                     <h1 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400 mb-1">
@@ -272,6 +284,7 @@ export default function ProjectDetails() {
                 </div>
             </div>
 
+            {/* Kanban Board */}
             <div 
                 ref={scrollContainerRef}
                 onMouseDown={handleMouseDown}
@@ -285,10 +298,13 @@ export default function ProjectDetails() {
                     return (
                         <div key={stage.id} className="min-w-[300px] w-[300px] flex-shrink-0 h-full max-h-[calc(100vh-220px)] flex flex-col">
                             <div className="bg-[#121212]/60 backdrop-blur-sm rounded-xl border border-white/5 h-full flex flex-col shadow-lg">
+                                {/* Stage Header */}
                                 <div className="p-4 border-b border-white/5 flex justify-between items-center bg-white/5 rounded-t-xl">
                                     <h3 className="font-bold text-blue-100 text-sm">{stage.title}</h3>
                                     <span className="bg-black/40 text-xs px-2 py-1 rounded-full text-white/60 font-mono">{stageTasks.length}</span>
                                 </div>
+                                
+                                {/* Tasks List */}
                                 <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-3">
                                     {stageTasks.map(task => (
                                         <div 
@@ -312,6 +328,8 @@ export default function ProjectDetails() {
                                         </div>
                                     ))}
                                 </div>
+                                
+                                {/* Add Button */}
                                 <div className="p-3 pt-2">
                                     <button 
                                         onClick={() => handleAddTask(stage.id, stage.title)}
@@ -326,6 +344,7 @@ export default function ProjectDetails() {
                 })}
             </div>
 
+            {/* Modal */}
             {selectedTask && (
                 <TaskDetailModal 
                     task={selectedTask} 
@@ -338,6 +357,8 @@ export default function ProjectDetails() {
         </div>
     );
 }
+
+// --- Helper Components ---
 
 const StatusBadge = ({ status }: { status: TaskStatus }) => {
     const map = {
@@ -383,6 +404,7 @@ const TaskDetailModal = ({ task, teamMembers, onClose, onUpdate, onDelete }:
         onUpdate({ checklist: newChecklist });
     };
 
+    // --- Upload Logic ---
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!e.target.files || e.target.files.length === 0) return;
         setUploading(true);
@@ -440,10 +462,12 @@ const TaskDetailModal = ({ task, teamMembers, onClose, onUpdate, onDelete }:
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xl animate-fade-in" onClick={onClose}>
             <div className="glass w-full max-w-4xl max-h-[85vh] overflow-y-auto rounded-3xl border border-white/10 shadow-2xl relative animate-scale-up custom-scrollbar" onClick={(e) => e.stopPropagation()}>
                 
+                {/* Modal Header */}
                 <div className="h-24 bg-gradient-to-r from-blue-900/40 to-purple-900/40 w-full relative">
                     <button onClick={onClose} className="absolute top-4 right-4 bg-black/40 hover:bg-red-500/80 text-white p-2 rounded-full transition backdrop-blur-md z-20"><FiX size={20} /></button>
                 </div>
 
+                {/* Modal Content */}
                 <div className="p-6 md:p-10 space-y-8 -mt-10 relative z-10">
                     <div className="space-y-2">
                         <div className="flex gap-2 items-center">
@@ -463,7 +487,9 @@ const TaskDetailModal = ({ task, teamMembers, onClose, onUpdate, onDelete }:
                     </div>
 
                     <div className="flex flex-col md:flex-row gap-10">
+                        {/* Left Side */}
                         <div className="flex-1 space-y-6">
+                            {/* Description */}
                             <div className="space-y-2">
                                 <h3 className="text-lg font-bold text-white/90 flex items-center gap-2"><FiFileText/> توضیحات</h3>
                                 <textarea 
@@ -475,6 +501,7 @@ const TaskDetailModal = ({ task, teamMembers, onClose, onUpdate, onDelete }:
                                 />
                             </div>
 
+                            {/* Checklist */}
                             <div className="space-y-2">
                                 <h3 className="text-lg font-bold text-white/90 flex items-center gap-2"><FiCheckSquare /> چک‌لیست</h3>
                                 {task.checklist?.map((item) => (
@@ -491,6 +518,7 @@ const TaskDetailModal = ({ task, teamMembers, onClose, onUpdate, onDelete }:
                                 </div>
                             </div>
 
+                            {/* Attachments List */}
                             {task.attachments && task.attachments.length > 0 && (
                                 <div className="space-y-2">
                                     <h3 className="text-lg font-bold text-white/90 flex items-center gap-2"><FiDownload /> فایل‌ها</h3>
@@ -505,6 +533,7 @@ const TaskDetailModal = ({ task, teamMembers, onClose, onUpdate, onDelete }:
                                 </div>
                             )}
 
+                            {/* Comments */}
                             <div className="space-y-4 pt-4 border-t border-white/10">
                                 <h3 className="text-lg font-bold text-white/90 flex items-center gap-2"><FiActivity /> فعالیت‌ها</h3>
                                 <div className="flex gap-3">
@@ -522,7 +551,9 @@ const TaskDetailModal = ({ task, teamMembers, onClose, onUpdate, onDelete }:
                             </div>
                         </div>
 
+                        {/* Right Sidebar */}
                         <div className="w-full md:w-64 space-y-4 flex-shrink-0">
+                            {/* Assign Member */}
                             <div className="relative">
                                 <button onClick={() => setShowUsers(!showUsers)} className="w-full flex items-center justify-between bg-white/5 hover:bg-white/10 text-white/90 py-3 px-4 rounded-lg text-sm transition border border-white/5">
                                     <div className="flex items-center gap-3"><FiUsers className="text-blue-400" /> {task.assigned_user_email || "تخصیص به عضو"}</div>
@@ -539,14 +570,16 @@ const TaskDetailModal = ({ task, teamMembers, onClose, onUpdate, onDelete }:
                                 )}
                             </div>
 
-                         {/* Range DatePicker Fix */}
+{/* Date Picker (Range + Value Fix) */}
                             <div className="relative group w-full">
                                 <DatePicker 
+                                    // اصلاح شده: اضافه کردن as any برای رفع ارور تایپ‌اسکریپت
+                                    value={task.due_date as any} 
                                     calendar={persian}
                                     locale={persian_fa}
                                     range
                                     rangeHover
-                                    onChange={(dateObjects: any) => { // <--- اینجا تغییر کرد: اضافه کردن : any
+                                    onChange={(dateObjects: any) => {
                                         if (Array.isArray(dateObjects)) {
                                             const dateString = dateObjects.map((d: any) => d.toString()).join(' - ');
                                             onUpdate({ due_date: dateString });
@@ -554,7 +587,7 @@ const TaskDetailModal = ({ task, teamMembers, onClose, onUpdate, onDelete }:
                                             onUpdate({ due_date: dateObjects.toString() });
                                         }
                                     }}
-                                    render={(value: any, openCalendar: any) => ( // <--- اینجا هم برای اطمینان any اضافه شد
+                                    render={(value: any, openCalendar: any) => (
                                         <button 
                                             onClick={openCalendar}
                                             className="w-full flex items-center justify-between bg-white/5 hover:bg-white/10 text-white/90 py-3 px-4 rounded-lg text-sm transition border border-white/5 cursor-pointer"
@@ -569,13 +602,15 @@ const TaskDetailModal = ({ task, teamMembers, onClose, onUpdate, onDelete }:
                                     )}
                                 />
                             </div>
-
+                            
+                            {/* Upload Button */}
                             <button onClick={() => fileInputRef.current?.click()} className="w-full flex items-center gap-3 bg-white/5 hover:bg-white/10 text-white/90 py-3 px-4 rounded-lg text-sm transition text-right group border border-white/5 hover:border-white/20">
                                 <FiUpload className="text-purple-400" /> 
                                 {uploading ? "در حال آپلود..." : "پیوست فایل"}
                             </button>
                             <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileUpload} />
 
+                            {/* Delete Button */}
                             <div className="space-y-2 pt-4 border-t border-white/10">
                                 <button onClick={onDelete} className="w-full flex items-center gap-3 bg-red-500/10 hover:bg-red-500/20 text-red-300 py-3 px-4 rounded-lg text-sm transition text-right border border-red-500/10 hover:border-red-500/30">
                                     <FiTrash2 /> حذف تسک
