@@ -1,0 +1,12 @@
+{
+  "platform": "next",
+  "app": "digitask",
+  "port": 3000,
+  "ignores": [
+    "node_modules",
+    ".next",
+    ".git",
+    ".vscode",
+    ".env.local"
+  ]
+}

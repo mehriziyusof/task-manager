@@ -21,19 +21,20 @@ export default function MainSidebar() {
 
   const isActive = (path: string) => pathname === path;
 
+  // لیست منوها با ترتیب جدید (داشبورد اول)
   const menuItems = [
-      // داشبورد آمد اول لیست
-      { name: 'داشبورد مدیریتی', icon: FiPieChart, href: '/dashboard' }, 
-      { name: 'میز کار من', icon: FiHome, href: '/' },
-      { name: 'تقویم', icon: FiCalendar, href: '/calendar' },
-      { name: 'اعضای تیم', icon: FiUsers, href: '/team' },
-      { name: 'پروفایل من', icon: FiUser, href: '/profile' },
+      { label: 'داشبورد مدیریتی', icon: FiPieChart, href: '/dashboard' }, 
+      { label: 'میز کار من', icon: FiHome, href: '/' },
+      { label: 'تقویم', icon: FiCalendar, href: '/calendar' },
+      { label: 'اعضای تیم', icon: FiUsers, href: '/team' },
+      { label: 'پروفایل من', icon: FiUser, href: '/profile' },
   ];
 
   return (
     <aside className="hidden md:flex flex-col w-72 h-full flex-shrink-0">
       <div className="glass w-full h-full rounded-3xl p-6 flex flex-col justify-between">
         <div>
+          {/* Logo */}
           <div className="flex items-center gap-4 mb-10 px-2">
             <div className="w-12 h-12 flex items-center justify-center rounded-2xl bg-gradient-to-tr from-blue-600 to-purple-600 shadow-lg shadow-blue-500/30 text-white font-bold text-xl">DT</div>
             <div>
@@ -41,25 +42,28 @@ export default function MainSidebar() {
               <span className="text-xs text-white/50">ورژن ۲.۰</span>
             </div>
           </div>
-<nav className="space-y-3">
+          
+          {/* Navigation */}
+          <nav className="space-y-3">
             {menuItems.map((item) => (
                 <SidebarLink 
                     key={item.href} 
                     href={item.href}
-                    // اینجا name را به label تبدیل می‌کنیم
-                    label={item.name} 
-                    // اینجا آیکون را رندر می‌کنیم تا خطا ندهد
-                    icon={<item.icon size={20} />} 
+                    label={item.label}
+                    icon={<item.icon />} // اصلاح شده: کامپوننت را اینجا رندر نمی‌کنیم، پایین هندل می‌شود
                     active={isActive(item.href)} 
                 />
             ))}
           </nav>
         </div>
+
+        {/* Footer Actions */}
         <div className="space-y-4">
             <button onClick={handleLogout} className="w-full flex items-center gap-4 p-3.5 rounded-2xl text-red-300 hover:bg-red-500/10 hover:text-red-400 transition-all duration-200 group border border-transparent hover:border-red-500/20">
                 <span className="text-xl"><FiLogOut /></span>
                 <span className="font-medium text-sm">خروج از حساب</span>
             </button>
+            
             <div className="glass-hover p-4 rounded-2xl border border-white/5 relative overflow-hidden group cursor-pointer">
                 <div className="absolute top-0 right-0 w-24 h-24 bg-purple-500/20 blur-2xl -mr-10 -mt-10 group-hover:bg-purple-500/30 transition-all" />
                 <p className="text-xs text-white/60 mb-1 relative z-10">پلن فعلی شما</p>
@@ -74,11 +78,16 @@ export default function MainSidebar() {
   );
 }
 
+// کامپوننت لینک تکی
 interface SidebarLinkProps { href: string; icon: React.ReactNode; label: string; active?: boolean; }
+
 function SidebarLink({ href, icon, label, active = false }: SidebarLinkProps) {
   return (
     <Link href={href} className={`flex items-center gap-4 p-3.5 rounded-2xl transition-all duration-200 group ${active ? "bg-white/10 text-white border border-white/10 shadow-lg" : "text-white/70 hover:bg-white/5 hover:text-white border border-transparent hover:border-white/5"}`}>
-      <span className={`text-xl transition-transform duration-300 ${!active && "group-hover:scale-110"}`}>{icon}</span>
+      <span className={`text-xl transition-transform duration-300 ${!active && "group-hover:scale-110"}`}>
+        {/* اطمینان از اینکه آیکون درست نمایش داده شود */}
+        {React.isValidElement(icon) ? icon : null} 
+      </span>
       <span className="font-medium text-sm">{label}</span>
       {active && <div className="mr-auto w-1.5 h-1.5 rounded-full bg-blue-400 shadow-[0_0_10px_rgba(96,165,250,0.8)]" />}
     </Link>
